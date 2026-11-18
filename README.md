@@ -17,10 +17,31 @@ existing account or implement the planned main menu or guest play.
 
 ## Rooms
 
-Use the room selector to switch between Lobby 1, 2 and 3. Their terrain seeds,
+Use the room selector to switch between available rooms. Their terrain seeds,
 world edits, furnaces, inventory and player position are independent. Return
 items from crafting grids before switching. Room saves are stored under
 `save-data/rooms/`; the previous world and player saves are retained separately.
+
+## Administrator
+
+Set `PIXAME_ADMIN_GOOGLE_EMAIL` in the server's environment to the Google
+account's email address. Only a Google-verified matching account receives
+administrator access; an empty setting disables it. Sign in with Google after
+changing this setting. Never put credentials or a client secret in the project
+directory.
+
+Administrators can toggle flight with F, ascend with Space and descend with
+Shift, and use the inventory's item selector. Their block placement, crafting
+and furnace inputs do not consume items. The ADMIN panel lists online players,
+supports kicking and timed or permanent account bans, and can remove bans.
+It can also create rooms or archive empty rooms; restoring an archived room by
+its name keeps its seed, world and player saves. At least one room must remain
+active.
+
+Flight and inventory are client-controlled and are not anti-cheat protections.
+There is currently no health or damage system, so invulnerability has no effect.
+These changes must be deployed and the environment variable configured on the
+hosting server before they are available there.
 
 ## Distant terrain
 

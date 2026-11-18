@@ -21,8 +21,9 @@ const stub = `
     };
   }
   OAuth2Client.prototype.verifyIdToken = async ({ idToken, audience }) => {
-    if (audience !== process.env.GOOGLE_CLIENT_ID || idToken !== 'valid-test-token') throw new Error('Invalid token');
-    return { getPayload: () => ({ sub: 'test-google-subject' }) };
+    if (audience !== process.env.GOOGLE_CLIENT_ID || !['valid-test-token', 'admin-token', 'unverified-token'].includes(idToken)) throw new Error('Invalid token');
+    const sub = idToken === 'valid-test-token' ? 'test-google-subject' : idToken;
+    return { getPayload: () => ({ sub, email: 'admin@example.test', email_verified: idToken === 'admin-token' }) };
   };
   require('./server.js');
 `;
@@ -46,7 +47,7 @@ async function startServer(directory, port, extraEnv = {}) {
   let output = '';
   child.stdout.on('data', data => { output += data; });
   child.stderr.on('data', data => { output += data; });
-  for (let attempt = 0; attempt < 100; attempt++) {
+  for (let attempt = 0; attempt < 300; attempt++) {
     if (child.exitCode !== null) throw new Error(`Test server exited: ${output}`);
     if (output.includes('Server listening')) return child;
     await new Promise(resolve => setTimeout(resolve, 50));
@@ -66,7 +67,12 @@ test('room switch barrier reports a failed world save', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-room-failure-test-'));
   const port = await unusedPort();
   const server = await startServer(directory, port, { PIXAME_TEST_FAIL_WORLD: '1' });
-  const socket = io(`http://127.0.0.1:${port}`, { autoConnect: false, transports: ['websocket'], query: { room: 'lobby1' } });
+  const base = `http://127.0.0.1:${port}`;
+  const login = await fetch(base + '/api/auth/google', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential: 'valid-test-token' })
+  });
+  const { token } = await login.json();
+  const socket = io(base, { autoConnect: false, transports: ['websocket'], query: { room: 'lobby1' }, auth: { token }, timeout: 3000 });
   t.after(async () => {
     socket.disconnect();
     await stopServer(server);
@@ -78,6 +84,136 @@ test('room switch barrier reports a failed world save', async t => {
   assert.match(result.error, /save/i);
   const barrier = await socket.timeout(3000).emitWithAck('roomSwitchBarrier');
   assert.match(barrier.error, /could not be saved/i);
+});
+
+test('admin privileges require a Google-verified configured identity', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-admin-test-'));
+  const port = await unusedPort();
+  const server = await startServer(directory, port, { PIXAME_ADMIN_GOOGLE_EMAIL: 'admin@example.test' });
+  t.after(async () => {
+    await stopServer(server);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const login = async credential => {
+    const response = await fetch(base + '/api/auth/google', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ credential })
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const ordinary = await login('unverified-token');
+  assert.equal(ordinary.isAdmin, false);
+  const admin = await login('admin-token');
+  assert.equal(admin.isAdmin, true);
+  const session = await fetch(base + '/api/auth/session', { headers: { Authorization: `Bearer ${admin.token}` } });
+  assert.equal((await session.json()).isAdmin, true);
+});
+
+test('admin moderation and room archive are authorized and preserve saves', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-moderation-test-'));
+  const port = await unusedPort();
+  let server = await startServer(directory, port, { PIXAME_ADMIN_GOOGLE_EMAIL: 'admin@example.test' });
+  const sockets = [];
+  t.after(async () => {
+    sockets.forEach(socket => socket.disconnect());
+    await stopServer(server);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const post = (url, body, token, room = 'lobby1') => fetch(base + url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pixame-Room': room, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body)
+  });
+  const googleLogin = async credential => (await post('/api/auth/google', { credential })).json();
+  let admin = await googleLogin('admin-token');
+  const signup = await post('/api/auth/signup', { username: 'ordinary', password: 'password123' });
+  const user = await signup.json();
+  assert.equal((await post('/api/admin/rooms', { id: 'secret' })).status, 401);
+  assert.equal((await post('/api/admin/rooms', { id: 'secret' }, user.token)).status, 403);
+  assert.equal((await post('/api/admin/moderation', { action: 'ban', accountId: 'made-up', hours: null }, user.token)).status, 403);
+  const rejected = io(base, { autoConnect: false, reconnection: false, transports: ['websocket'], query: { room: 'lobby1' } });
+  sockets.push(rejected);
+  const rejection = once(rejected, 'connect_error');
+  rejected.connect();
+  assert.match((await rejection)[0].message, /sign in/i);
+  const created = await post('/api/admin/rooms', { id: 'testroom' }, admin.token);
+  assert.equal(created.status, 201);
+  const { seed } = await created.json();
+  const profile = {
+    hotbarItems: [{ type: 'wood', count: 3 }, ...Array(7).fill(null)],
+    backpackItems: Array(27).fill(null), selectedHotbarIndex: 0, position: { x: 1, y: 10, z: 2 }
+  };
+  const saved = await fetch(base + '/api/player-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-Pixame-Room': 'testroom', 'X-Profile-Revision': '0', Authorization: `Bearer ${user.token}` },
+    body: JSON.stringify(profile)
+  });
+  assert.equal(saved.status, 200);
+  async function connect(token, room) {
+    const socket = io(base, { autoConnect: false, reconnection: false, transports: ['websocket'], query: { room }, auth: { token }, timeout: 3000 });
+    sockets.push(socket);
+    socket.connect();
+    await once(socket, 'connect');
+    return socket;
+  }
+  const first = await connect(user.token, 'testroom');
+  const second = await connect(user.token, 'lobby2');
+  await connect(admin.token, 'lobby1');
+  const status = await (await fetch(base + '/api/admin/status', { headers: { Authorization: `Bearer ${admin.token}` } })).json();
+  assert.equal(status.online.length, 3);
+  const accountId = status.online.find(player => player.username === 'ordinary').accountId;
+  const adminId = status.online.find(player => player.username === 'Google player').accountId;
+  assert.equal((await post('/api/admin/moderation', { action: 'ban', accountId: adminId, hours: null }, admin.token)).status, 400);
+  const edit = { x: 4, y: 5, z: 6, removed: false, placedType: 'wood' };
+  assert.deepEqual(await first.timeout(3000).emitWithAck('blockEdit', edit), { ok: true });
+  const furnaceEdit = { x: 5, y: 5, z: 6, removed: false, placedType: 'furnace' };
+  assert.deepEqual(await first.timeout(3000).emitWithAck('blockEdit', furnaceEdit), { ok: true });
+  const adminProfile = { ...profile, hotbarItems: [{ type: 'iron_ore', count: 1 }, ...Array(7).fill(null)] };
+  const adminInsert = await post('/api/furnace', {
+    ...furnaceEdit, action: 'insert', slot: 'input', container: 'hotbarItems', index: 0, profile: adminProfile, revision: 0
+  }, admin.token, 'testroom');
+  assert.equal(adminInsert.status, 200);
+  const inserted = await adminInsert.json();
+  assert.equal(inserted.furnace.input.count, 1);
+  assert.equal(inserted.profile.hotbarItems[0].count, 1);
+  assert.equal((await post('/api/admin/rooms/archive', { id: 'testroom' }, admin.token)).status, 409);
+  const kicked1 = once(first, 'moderationAction');
+  const kicked2 = once(second, 'moderationAction');
+  assert.equal((await post('/api/admin/moderation', { action: 'kick', accountId }, admin.token)).status, 200);
+  assert.match((await kicked1)[0].message, /removed/i);
+  assert.match((await kicked2)[0].message, /removed/i);
+  const third = await connect(user.token, 'testroom');
+  const fourth = await connect(user.token, 'lobby2');
+  const disconnected1 = once(third, 'disconnect');
+  const disconnected2 = once(fourth, 'disconnect');
+  const bannedMessage = once(third, 'moderationAction');
+  assert.equal((await post('/api/admin/moderation', { action: 'ban', accountId, hours: null }, admin.token)).status, 200);
+  await Promise.all([disconnected1, disconnected2]);
+  assert.match((await bannedMessage)[0].message, /banned/i);
+  assert.equal((await post('/api/auth/login', { username: 'ordinary', password: 'password123' })).status, 403);
+  assert.equal((await fetch(base + '/api/auth/session', { headers: { Authorization: `Bearer ${user.token}` } })).status, 401);
+  assert.equal((await post('/api/admin/rooms/archive', { id: 'testroom' }, admin.token)).status, 200);
+  assert.equal((await fetch(base + '/api/rooms').then(response => response.json())).some(room => room.id === 'testroom'), false);
+  await stopServer(server);
+  server = await startServer(directory, port, { PIXAME_ADMIN_GOOGLE_EMAIL: 'admin@example.test' });
+  admin = await googleLogin('admin-token');
+  assert.equal((await post('/api/auth/login', { username: 'ordinary', password: 'password123' })).status, 403);
+  const restored = await post('/api/admin/rooms', { id: 'testroom' }, admin.token);
+  assert.equal((await restored.json()).seed, seed);
+  assert.equal((await post('/api/admin/moderation', { action: 'unban', accountId }, admin.token)).status, 200);
+  const relogin = await post('/api/auth/login', { username: 'ordinary', password: 'password123' }, null, 'testroom');
+  const returned = await relogin.json();
+  assert.deepEqual(returned.profile, profile);
+  const reconnected = io(base, { autoConnect: false, reconnection: false, transports: ['websocket'], query: { room: 'testroom' }, auth: { token: returned.token } });
+  sockets.push(reconnected);
+  const edits = once(reconnected, 'worldEdits');
+  reconnected.connect();
+  assert.deepEqual((await edits)[0], [edit, furnaceEdit]);
+  assert.equal((await post('/api/admin/moderation', { action: 'ban', accountId, hours: 0.00001 }, admin.token)).status, 200);
+  await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal((await post('/api/auth/login', { username: 'ordinary', password: 'password123' })).status, 200);
 });
 
 test('Google sign-in verifies identity and retains its separate profile after restart', async t => {
@@ -143,7 +279,7 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
     body: JSON.stringify(body)
   });
   const login = await post('/api/auth/google', { credential: 'valid-test-token' }, 'lobby1');
-  const { token } = await login.json();
+  let { token } = await login.json();
   const auth = { Authorization: `Bearer ${token}` };
   const getSession = room => fetch(base + '/api/auth/session', { headers: { ...auth, 'X-Pixame-Room': room } });
   assert.equal((await getSession('lobby2')).status, 200);
@@ -164,7 +300,7 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
   assert.equal((await (await getSession('lobby3')).json()).profile, null);
 
   async function connect(room) {
-    const socket = io(base, { autoConnect: false, transports: ['websocket'], query: { room } });
+    const socket = io(base, { autoConnect: false, transports: ['websocket'], query: { room }, auth: { token }, timeout: 3000 });
     sockets.push(socket);
     const edits = once(socket, 'worldEdits');
     socket.connect();
@@ -208,7 +344,8 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
   await stopServer(server);
   server = await startServer(directory, port);
   const relogin = await post('/api/auth/google', { credential: 'valid-test-token' }, 'lobby1');
-  const newAuth = { Authorization: `Bearer ${(await relogin.json()).token}` };
+  token = (await relogin.json()).token;
+  const newAuth = { Authorization: `Bearer ${token}` };
   const room1 = await fetch(base + '/api/auth/session', { headers: { ...newAuth, 'X-Pixame-Room': 'lobby1' } });
   const room2 = await fetch(base + '/api/auth/session', { headers: { ...newAuth, 'X-Pixame-Room': 'lobby2' } });
   assert.equal((await room1.json()).profile.hotbarItems[0].count, 2);

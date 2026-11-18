@@ -1,12 +1,13 @@
         console.log('pixame script start');
-        const roomSeeds = {lobby1: 1, lobby2: 2, lobby3: 3};
+        const roomSeeds = Object.fromEntries(window.pixameRooms.map(room => [room.id, room.seed]));
         const requestedRoom = new URLSearchParams(location.search).get('room');
-        const roomId = Object.hasOwn(roomSeeds, requestedRoom) ? requestedRoom : 'lobby1';
+        const roomId = Object.hasOwn(roomSeeds, requestedRoom) ? requestedRoom : Object.keys(roomSeeds)[0];
         const roomSelect = document.getElementById('room-select');
         const roomMessage = document.getElementById('room-message');
         const roomSwitchScreen = document.getElementById('room-switching');
+        roomSelect.replaceChildren(...Object.keys(roomSeeds).map(id => new Option(id, id)));
         roomSelect.value = roomId;
-        if (requestedRoom && !Object.hasOwn(roomSeeds, requestedRoom)) roomMessage.textContent = 'Invalid room; using Lobby 1.';
+        if (requestedRoom && !Object.hasOwn(roomSeeds, requestedRoom)) roomMessage.textContent = `Room unavailable; using ${roomId}.`;
         let roomSwitching = false;
         let accountInitializing = true;
         window.addEventListener('error', (e) => {
@@ -1268,6 +1269,8 @@
         const googleSignIn = document.getElementById('google-sign-in');
         let accountSession = null;
         let accountReady = false;
+        let isPlayerAdmin = false;
+        let flying = false;
         let profileRevision = 0;
         let signingUp = false;
         let accountProfileTimer = null;
@@ -1325,6 +1328,8 @@
 
         function showAuth(message = '') {
             if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+            if (socket.connected) socket.disconnect();
+            setAdminStatus(false);
             authMessage.textContent = message;
             authScreen.hidden = false;
         }
@@ -1332,6 +1337,19 @@
         function hideAuth() {
             authScreen.hidden = true;
             authPassword.value = '';
+            socket.auth = {token: accountSession.token};
+            if (!socket.connected) socket.connect();
+        }
+
+        function setAdminStatus(enabled) {
+            isPlayerAdmin = enabled === true;
+            document.getElementById('admin-creative-items').hidden = !isPlayerAdmin;
+            const button = document.getElementById('admin-flight');
+            button.hidden = !isPlayerAdmin;
+            document.getElementById('admin-open').hidden = !isPlayerAdmin;
+            if (!isPlayerAdmin) document.getElementById('admin-screen').hidden = true;
+            if (!isPlayerAdmin) flying = false;
+            button.textContent = `FLIGHT [F]: ${flying ? 'ON' : 'OFF'}`;
         }
 
         async function sendAccountProfile() {
@@ -1401,6 +1419,7 @@
                                 accountSession = {token: payload.token, username: payload.username};
                                 profileRevision = payload.revision;
                                 accountReady = true;
+                                setAdminStatus(payload.isAdmin);
                                 furnaceSaveUncertain = false;
                                 localStorage.setItem(accountStorageKey, JSON.stringify(accountSession));
                                 if (payload.profile) applyPlayerProfile(payload.profile);
@@ -1447,6 +1466,7 @@
                 accountSession = {token: payload.token, username: payload.username};
                 profileRevision = payload.revision;
                 accountReady = true;
+                setAdminStatus(payload.isAdmin);
                 furnaceSaveUncertain = false;
                 localStorage.setItem(accountStorageKey, JSON.stringify(accountSession));
                 if (payload.profile) applyPlayerProfile(payload.profile);
@@ -1473,6 +1493,7 @@
                 accountSession.username = payload.username;
                 profileRevision = payload.revision;
                 accountReady = true;
+                setAdminStatus(payload.isAdmin);
                 localStorage.setItem(accountStorageKey, JSON.stringify(accountSession));
                 applyPlayerProfile(payload.profile);
                 hideAuth();
@@ -1571,6 +1592,7 @@
         }
 
         function removeItems(type, count) {
+            if (isPlayerAdmin && itemCount(type) > 0) return true;
             if (itemCount(type) < count) return false;
             for (const container of [hotbarItems, backpackItems]) {
                 for (let index = 0; index < container.length && count > 0; index++) {
@@ -1901,9 +1923,7 @@
                 : desertWeight > 0.55 ? 'desert'
                 : moisture > 0.62 ? 'forest'
                 : 'plains';
-            const surfaceType = biome === 'snow' || biome === 'mountain' && snowWeight > 0.3 ? 'snow'
-                : biome === 'desert' ? 'sand'
-                : 'grass';
+            const surfaceType = biome === 'desert' ? 'sand' : 'grass';
             const treeDensity = biome === 'forest' ? 0.075
                 : biome === 'plains' ? 0.018
                 : biome === 'mountain' ? 0.008
@@ -2688,7 +2708,7 @@
         let activePalettePage = 'blocks';
 
         function hasRecipeIngredients(recipe) {
-            return Object.entries(recipe.ingredients).every(([type, count]) => itemCount(type) >= count);
+            return Object.entries(recipe.ingredients).every(([type, count]) => itemCount(type) >= (isPlayerAdmin ? 1 : count));
         }
 
         function craftRecipe(recipe) {
@@ -2934,8 +2954,10 @@
                     const stack = getSelectedInventoryStack();
                     if (!stack || stack.count < 1) return;
                     personalCraftingGrid[index] = stack.type;
-                    stack.count--;
-                    if (stack.count === 0) getInventoryContainer(selectedInventoryItem.container)[selectedInventoryItem.index] = null;
+                    if (!isPlayerAdmin) {
+                        stack.count--;
+                        if (stack.count === 0) getInventoryContainer(selectedInventoryItem.container)[selectedInventoryItem.index] = null;
+                    }
                     updateHotbar();
                 });
                 cell.addEventListener('contextmenu', event => {
@@ -3192,6 +3214,32 @@
             } else {
                 hotbarItems[slotIndex] = {type, count: 64};
             }
+
+            const adminItemSelect = document.getElementById('admin-item-select');
+            const adminItemMessage = document.getElementById('admin-item-message');
+            adminItemSelect.addEventListener('focus', () => {
+                const previous = adminItemSelect.value;
+                adminItemSelect.replaceChildren();
+                for (const [type, definition] of Object.entries(itemDefinitions)) {
+                    adminItemSelect.add(new Option(definition.label, type));
+                }
+                if (itemDefinitions[previous]) adminItemSelect.value = previous;
+            });
+            document.getElementById('admin-item-add').addEventListener('click', () => {
+                if (!isPlayerAdmin) return;
+                const type = adminItemSelect.value;
+                if (!itemDefinitions[type]) {
+                    adminItemMessage.textContent = 'Select an item.';
+                    return;
+                }
+                if (!canStoreItems(type, 64)) {
+                    adminItemMessage.textContent = 'Not enough inventory space.';
+                    return;
+                }
+                storeItems(type, 64);
+                updateHotbar();
+                adminItemMessage.textContent = '';
+            });
             selectedHotbarIndex = slotIndex;
             updateHotbar();
             showItemNotification();
@@ -3263,6 +3311,7 @@
         });
         window.addEventListener('keydown', event => {
             if (roomSwitching) return;
+            if (!document.getElementById('admin-screen').hidden) return;
             if (isTextInputTarget(event.target)) return;
             if (furnacePending || furnaceSaveUncertain) return;
             if (event.key.toLowerCase() === 'b') {
@@ -3435,8 +3484,10 @@
             const columnKey = terrainColumnKey(x, z);
             if (!placedColumns.has(columnKey)) placedColumns.set(columnKey, new Map());
             placedColumns.get(columnKey).set(y, selected.type);
-            selected.count--;
-            if (selected.count === 0) hotbarItems[selectedHotbarIndex] = null;
+            if (!isPlayerAdmin) {
+                selected.count--;
+                if (selected.count === 0) hotbarItems[selectedHotbarIndex] = null;
+            }
             updateHotbar();
             rebuildTerrainAroundEdit(x, y, z);
             socket.emit('blockEdit', currentWorldEdit(x, y, z));
@@ -3447,7 +3498,23 @@
         // ==========================================
         // 🌐 【联机核心第二步】连接服务器 & 渲染其他玩家
         // ==========================================
-        const socket = io({query: {room: roomId}});
+        const socket = io({autoConnect: false, query: {room: roomId}});
+        socket.on('moderationAction', ({message}) => {
+            accountReady = false;
+            accountSession = null;
+            localStorage.removeItem(accountStorageKey);
+            showAuth(message);
+        });
+        socket.on('connect_error', error => {
+            if (error.message === 'Sign in is required or your account is banned.') {
+                accountReady = false;
+                accountSession = null;
+                localStorage.removeItem(accountStorageKey);
+                showAuth(error.message);
+            } else {
+                roomMessage.textContent = `Connection failed: ${error.message}`;
+            }
+        });
         const otherPlayers = {};
 
         function playRemotePlayerAnimation(remotePlayer, animationName) {
@@ -3588,7 +3655,17 @@
         const gravity = 20;
         let velocityY = 0;
         let grounded = true;
-        const move = { forward: false, back: false, left: false, right: false, sprint: false };
+        const move = { forward: false, back: false, left: false, right: false, sprint: false, flyUp: false, flyDown: false };
+        function toggleAdminFlight() {
+            if (!isPlayerAdmin || !accountReady || !authScreen.hidden || roomSwitching) return;
+            flying = !flying;
+            velocityY = 0;
+            grounded = false;
+            move.flyUp = false;
+            move.flyDown = false;
+            document.getElementById('admin-flight').textContent = `FLIGHT [F]: ${flying ? 'ON' : 'OFF'}`;
+        }
+        document.getElementById('admin-flight').addEventListener('click', toggleAdminFlight);
         const look = { dragging: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0 };
         const heldItemSwingDuration = 0.32;
         let heldItemSwingElapsed = heldItemSwingDuration;
@@ -3695,9 +3772,14 @@
 
         window.addEventListener('keydown', e => {
             if (roomSwitching) return;
+            if (!document.getElementById('admin-screen').hidden) return;
             if (isTextInputTarget(e.target)) return;
             if (furnaceOpen || furnaceSaveUncertain) return;
             const key = e.key.toLowerCase();
+            if (key === 'f' && !e.repeat && !playerInventoryOpen && !workbenchOpen && blockPalette.hidden) {
+                toggleAdminFlight();
+                return;
+            }
             if (key === 'v') {
                 e.preventDefault();
                 perspectiveModeIndex = (perspectiveModeIndex + 1) % perspectiveModes.length;
@@ -3713,8 +3795,16 @@
             if (key === 's' || key === 'arrowdown') move.back = true;
             if (key === 'a' || key === 'arrowleft') move.left = true;
             if (key === 'd' || key === 'arrowright') move.right = true;
-            if (key === 'shift') move.sprint = true;
+            if (key === 'shift') {
+                if (flying) move.flyDown = true;
+                else move.sprint = true;
+            }
             if (key === ' ' || key === 'spacebar') {
+                if (flying) {
+                    e.preventDefault();
+                    move.flyUp = true;
+                    return;
+                }
                 const feetY = camera.position.y - playerEyeHeight;
                 if (grounded) {
                     velocityY = jumpSpeed;
@@ -3731,7 +3821,8 @@
             if (key === 's' || key === 'arrowdown') move.back = false;
             if (key === 'a' || key === 'arrowleft') move.left = false;
             if (key === 'd' || key === 'arrowright') move.right = false;
-            if (key === 'shift') move.sprint = false;
+            if (key === 'shift') { move.sprint = false; move.flyDown = false; }
+            if (key === ' ' || key === 'spacebar') move.flyUp = false;
         });
 
         renderer.domElement.addEventListener('mousedown', e => {
@@ -3783,6 +3874,9 @@
             }
         });
         window.addEventListener('blur', () => {
+            move.flyUp = false;
+            move.flyDown = false;
+            move.sprint = false;
             miningActive = false;
             miningElapsed = 0;
             miningTargetKey = null;
@@ -3886,12 +3980,18 @@
                 }
             }
 
+            if (flying && isPlayerAdmin) {
+                grounded = false;
+                velocityY = speed * ((move.flyUp ? 1 : 0) - (move.flyDown ? 1 : 0));
+            }
             if (!grounded) {
                 const inWater = isWaterAt(camera.position.x, camera.position.z);
                 const currentFeetY = camera.position.y - playerEyeHeight;
                 const immersion = inWater ? clamp01((waterLevel - currentFeetY) / playerBodyHeight) : 0;
-                velocityY += (-gravity + gravity * 2.4 * immersion) * dt;
-                velocityY *= Math.exp(-7 * immersion * dt);
+                if (!flying) {
+                    velocityY += (-gravity + gravity * 2.4 * immersion) * dt;
+                    velocityY *= Math.exp(-7 * immersion * dt);
+                }
                 const nextY = camera.position.y + velocityY * dt;
                 const nextPos = camera.position.clone();
                 nextPos.y = nextY;
@@ -3923,7 +4023,7 @@
                 authScreen.hidden && !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden;
             updateHeldItemAnimation(dt, horizontalDistance, canAnimateHeldItem);
 
-            socket.emit('move', {
+            if (socket.connected) socket.emit('move', {
                 x: camera.position.x,
                 y: camera.position.y,
                 z: camera.position.z,
@@ -3943,6 +4043,88 @@
 
         updateCameraRotation();
         animate();
+        const adminScreen = document.getElementById('admin-screen');
+        const adminMessage = document.getElementById('admin-message');
+        async function adminRequest(url, body) {
+            const response = await fetch(url, {
+                method: body ? 'POST' : 'GET',
+                headers: {'Content-Type': 'application/json', Authorization: `Bearer ${accountSession.token}`, 'X-Pixame-Room': roomId},
+                ...(body ? {body: JSON.stringify(body)} : {})
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Administrator request failed.');
+            return data;
+        }
+        async function refreshAdminPanel() {
+            if (!isPlayerAdmin) return;
+            const status = await adminRequest('/api/admin/status');
+            const roomList = document.getElementById('admin-room-list');
+            const playerList = document.getElementById('admin-player-list');
+            const banList = document.getElementById('admin-ban-list');
+            roomList.replaceChildren();
+            playerList.replaceChildren();
+            banList.replaceChildren();
+            const appendAction = (list, label, actionText, handler) => {
+                const row = document.createElement('div');
+                const text = document.createElement('span');
+                text.textContent = label;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = actionText;
+                button.addEventListener('click', () => runAdminAction(handler));
+                row.append(text, button);
+                list.appendChild(row);
+            };
+            for (const [id, info] of Object.entries(status.rooms)) {
+                if (!info.active) continue;
+                appendAction(roomList, id, 'ARCHIVE', () => {
+                    if (!window.confirm(`Archive ${id}? Its saves will be kept.`)) return Promise.resolve();
+                    return adminRequest('/api/admin/rooms/archive', {id});
+                });
+            }
+            for (const player of status.online) {
+                appendAction(playerList, `${player.username} (${player.accountId.slice(0, 8)}) - ${player.room}`, 'KICK',
+                    () => adminRequest('/api/admin/moderation', {action: 'kick', accountId: player.accountId}));
+                appendAction(playerList, '', 'BAN', () => {
+                    const input = document.getElementById('admin-ban-hours').value;
+                    const hours = Number(input);
+                    if (!input || !Number.isFinite(hours) || hours < 0 || hours > 87600) throw new Error('Enter ban hours, or 0 for permanent.');
+                    return adminRequest('/api/admin/moderation', {action: 'ban', accountId: player.accountId, hours: hours === 0 ? null : hours});
+                });
+            }
+            for (const ban of status.bans) {
+                const expiry = ban.until === null ? 'permanent' : new Date(ban.until).toLocaleString();
+                appendAction(banList, `${ban.accountId.slice(0, 8)} - ${expiry}`, 'UNBAN',
+                    () => adminRequest('/api/admin/moderation', {action: 'unban', accountId: ban.accountId}));
+            }
+            const available = await adminRequest('/api/rooms');
+            for (const id of Object.keys(roomSeeds)) delete roomSeeds[id];
+            for (const room of available) roomSeeds[room.id] = room.seed;
+            roomSelect.replaceChildren(...available.map(room => new Option(room.id, room.id)));
+            roomSelect.value = roomId;
+        }
+        async function runAdminAction(action) {
+            try {
+                adminMessage.textContent = '';
+                await action();
+                await refreshAdminPanel();
+            } catch (error) {
+                console.error('Administrator action failed:', error);
+                adminMessage.textContent = error.message;
+            }
+        }
+        document.getElementById('admin-open').addEventListener('click', () => {
+            if (!isPlayerAdmin) return;
+            if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+            for (const key of Object.keys(move)) move[key] = false;
+            miningActive = false;
+            adminScreen.hidden = false;
+            runAdminAction(() => Promise.resolve());
+        });
+        document.getElementById('admin-close').addEventListener('click', () => { adminScreen.hidden = true; });
+        document.getElementById('admin-refresh').addEventListener('click', () => runAdminAction(() => Promise.resolve()));
+        document.getElementById('admin-room-create').addEventListener('click', () => runAdminAction(() =>
+            adminRequest('/api/admin/rooms', {id: document.getElementById('admin-room-name').value})));
         roomSelect.addEventListener('change', async () => {
             const nextRoom = roomSelect.value;
             if (!Object.hasOwn(roomSeeds, nextRoom) || nextRoom === roomId) return;

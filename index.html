@@ -43,6 +43,12 @@
             <button class="palette-tab" type="button" role="tab" aria-selected="false" data-palette-page="craft">CRAFT</button>
         </div>
         <div class="palette-page" data-palette-page-content="blocks">
+        <div id="admin-creative-items" hidden>
+            <label for="admin-item-select">ADMIN ITEMS</label>
+            <select id="admin-item-select"></select>
+            <button id="admin-item-add" type="button">ADD</button>
+            <span id="admin-item-message" role="status"></span>
+        </div>
         <div class="palette-grid" id="built-in-block-grid">
             <button class="palette-block" type="button" data-block-type="grass"><canvas class="item-icon" data-block-icon="grass" width="40" height="40"></canvas><span>Grass</span></button>
             <button class="palette-block" type="button" data-block-type="dirt"><canvas class="item-icon" data-block-icon="dirt" width="40" height="40"></canvas><span>Dirt</span></button>
@@ -110,6 +116,39 @@
         </div>
     </aside>
     <div id="hotbar" role="toolbar" aria-label="Inventory"></div>
-    <script src="/game.js"></script>
+    <button id="admin-flight" type="button" hidden>FLIGHT [F]: OFF</button>
+    <button id="admin-open" type="button" hidden>ADMIN</button>
+    <aside id="admin-screen" aria-label="Administrator controls" hidden>
+        <div class="auth-card">
+            <h1>ADMIN</h1>
+            <button id="admin-close" type="button">CLOSE</button>
+            <button id="admin-refresh" type="button">REFRESH</button>
+            <h2>ROOMS</h2>
+            <label>ROOM NAME <input id="admin-room-name" maxlength="24"></label>
+            <button id="admin-room-create" type="button">CREATE OR RESTORE</button>
+            <div id="admin-room-list"></div>
+            <h2>ONLINE PLAYERS</h2>
+            <label>BAN HOURS (0 = permanent) <input id="admin-ban-hours" type="number" min="0" max="87600" value="24"></label>
+            <div id="admin-player-list"></div>
+            <h2>BANNED ACCOUNTS</h2>
+            <div id="admin-ban-list"></div>
+            <div id="admin-message" role="status"></div>
+        </div>
+    </aside>
+    <script>
+        fetch('/api/rooms').then(response => {
+            if (!response.ok) throw new Error('Could not load rooms.');
+            return response.json();
+        }).then(rooms => {
+            if (!Array.isArray(rooms) || !rooms.length) throw new Error('No rooms available.');
+            window.pixameRooms = rooms;
+            const script = document.createElement('script');
+            script.src = '/game.js';
+            document.body.appendChild(script);
+        }).catch(error => {
+            console.error('Failed to load rooms:', error);
+            document.getElementById('auth-message').textContent = error.message;
+        });
+    </script>
 </body>
 </html>

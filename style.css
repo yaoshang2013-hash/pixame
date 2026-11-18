@@ -23,6 +23,18 @@
         .palette-close { padding: 2px 6px; color: #d8e1d5; background: transparent; border: 1px solid rgba(255,255,255,0.3); font: 12px monospace; cursor: pointer; }
         .palette-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
         #spark-block-browser { margin-top: 12px; }
+        #admin-creative-items { margin-bottom: 10px; color: #cceba8; }
+        #admin-creative-items[hidden], #admin-flight[hidden] { display: none; }
+        #admin-creative-items select, #admin-creative-items button { padding: 5px; color: #eaf2e5; background: #0b1213; border: 1px solid #5e7066; font: 10px monospace; }
+        #admin-item-message { display: block; color: #ffb0a5; }
+        #admin-flight { position: fixed; top: 14px; right: 14px; z-index: 8; padding: 8px; color: #eaf2e5; background: #192720; border: 1px solid #becbb9; cursor: pointer; font: bold 12px monospace; }
+        #admin-open { position: fixed; top: 50px; right: 14px; z-index: 8; padding: 8px; color: #eaf2e5; background: #192720; border: 1px solid #becbb9; cursor: pointer; font: bold 12px monospace; }
+        #admin-open[hidden], #admin-screen[hidden] { display: none; }
+        #admin-screen { position: fixed; inset: 0; z-index: 19; display: grid; place-items: center; padding: 18px; background: rgba(5, 10, 12, 0.7); }
+        #admin-screen .auth-card { max-height: 85vh; overflow-y: auto; font-size: 12px; }
+        #admin-screen h2 { margin: 14px 0 6px; font-size: 13px; color: #cceba8; }
+        #admin-screen input, #admin-screen button { margin: 3px; padding: 5px; }
+        #admin-message { color: #ffb0a5; }
         .spark-block-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
         .spark-block-filters input, .spark-block-filters select { min-width: 0; padding: 7px; color: #eaf2e5; background: #0b1213; border: 1px solid #5e7066; border-radius: 5px; font: 10px monospace; }
         .spark-block-grid { max-height: 270px; overflow-y: auto; align-content: start; padding: 2px; }

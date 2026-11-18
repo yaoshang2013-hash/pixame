@@ -106,7 +106,10 @@ const saveDirectory = process.env.PIXAME_SAVE_DIRECTORY || path.join(__dirname, 
 const accountSavePath = path.join(saveDirectory, 'accounts.json');
 const playerSavePath = path.join(saveDirectory, 'players.json');
 const furnaceSavePath = path.join(saveDirectory, 'furnace-state.json');
+const roomRegistryPath = path.join(saveDirectory, 'rooms.json');
+const bansPath = path.join(saveDirectory, 'bans.json');
 const sessions = new Map();
+const adminGoogleEmail = (process.env.PIXAME_ADMIN_GOOGLE_EMAIL || '').trim().toLowerCase();
 const googleClientId = process.env.GOOGLE_CLIENT_ID || '751302852382-vn0e9d0qb6sp8v5h52i9cr37ctt20197.apps.googleusercontent.com';
 const googleClient = new OAuth2Client(googleClientId);
 
@@ -144,6 +147,11 @@ function saveJson(filePath, value) {
 }
 
 const accounts = loadJson(accountSavePath, {});
+const bans = fs.existsSync(bansPath) ? JSON.parse(fs.readFileSync(bansPath, 'utf8')) : {};
+if (!bans || typeof bans !== 'object' || Array.isArray(bans) ||
+    !Object.values(bans).every(ban => ban && (ban.until === null || Number.isFinite(ban.until) && ban.until > 0))) {
+  throw new Error('Invalid ban state; refusing to ignore bans.');
+}
 let savedFurnaceState = null;
 if (fs.existsSync(furnaceSavePath)) {
   savedFurnaceState = JSON.parse(fs.readFileSync(furnaceSavePath, 'utf8'));
@@ -174,7 +182,17 @@ function getAccountFromRequest(request) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   const accountId = sessions.get(token);
   if (!accountId) return null;
-  return Object.values(accounts).find(account => account.id === accountId) || null;
+  const account = Object.values(accounts).find(entry => entry.id === accountId);
+  return account && !isBanned(account.id) ? account : null;
+}
+
+function isBanned(accountId) {
+  const ban = bans[accountId];
+  return !!ban && (ban.until === null || ban.until > Date.now());
+}
+
+function isAdmin(account) {
+  return !!(adminGoogleEmail && account?.googleSub && account.verifiedEmail === adminGoogleEmail);
 }
 
 function validSlots(slots, expectedLength) {
@@ -205,7 +223,7 @@ app.post('/api/auth/signup', (request, response) => {
     console.error('Failed to save account:', error);
     return response.status(500).json({ error: 'Could not create the account.' });
   }
-  return response.status(201).json({ token: createSession(account.id), username: account.username, profile: null, revision: 0 });
+  return response.status(201).json({ token: createSession(account.id), username: account.username, isAdmin: false, profile: null, revision: 0 });
 });
 
 app.post('/api/auth/login', (request, response) => {
@@ -214,11 +232,12 @@ app.post('/api/auth/login', (request, response) => {
   const password = typeof request.body.password === 'string' ? request.body.password : '';
   const account = accounts[username.toLowerCase()];
   if (!account) return response.status(401).json({ error: 'Invalid username or password.' });
+  if (isBanned(account.id)) return response.status(403).json({ error: 'This account is banned.' });
   const submittedHash = hashPassword(password, account.salt);
   if (!crypto.timingSafeEqual(Buffer.from(submittedHash, 'hex'), Buffer.from(account.passwordHash, 'hex'))) {
     return response.status(401).json({ error: 'Invalid username or password.' });
   }
-  return response.json({ token: createSession(account.id), username: account.username, profile: playerProfiles[account.id] || null, revision: profileRevisions[account.id] || 0 });
+  return response.json({ token: createSession(account.id), username: account.username, isAdmin: false, profile: playerProfiles[account.id] || null, revision: profileRevisions[account.id] || 0 });
 });
 
 app.post('/api/auth/google', async (request, response) => {
@@ -240,8 +259,13 @@ app.post('/api/auth/google', async (request, response) => {
   }
   const accountKey = `google:${payload.sub}`;
   let account = accounts[accountKey];
-  if (!account) {
-    account = { id: crypto.randomUUID(), username: 'Google player', googleSub: payload.sub };
+  if (account && isBanned(account.id)) return response.status(403).json({ error: 'This account is banned.' });
+  const verifiedEmail = adminGoogleEmail && payload.email_verified === true && typeof payload.email === 'string' &&
+    payload.email.trim().toLowerCase() === adminGoogleEmail ? adminGoogleEmail : null;
+  if (!account || account.verifiedEmail !== verifiedEmail) {
+    account = account
+      ? { ...account, verifiedEmail }
+      : { id: crypto.randomUUID(), username: 'Google player', googleSub: payload.sub, verifiedEmail };
     try {
       saveJson(accountSavePath, { ...accounts, [accountKey]: account });
     } catch (error) {
@@ -250,14 +274,14 @@ app.post('/api/auth/google', async (request, response) => {
     }
     accounts[accountKey] = account;
   }
-  return response.json({ token: createSession(account.id), username: account.username, profile: playerProfiles[account.id] || null, revision: profileRevisions[account.id] || 0 });
+  return response.json({ token: createSession(account.id), username: account.username, isAdmin: isAdmin(account), profile: playerProfiles[account.id] || null, revision: profileRevisions[account.id] || 0 });
 });
 
 app.get('/api/auth/session', (request, response) => {
   const { playerProfiles, profileRevisions } = request.room;
   const account = getAccountFromRequest(request);
   if (!account) return response.status(401).json({ error: 'Sign in is required.' });
-  return response.json({ username: account.username, provider: account.googleSub ? 'google' : 'password', profile: playerProfiles[account.id] || null, revision: profileRevisions[account.id] || 0 });
+  return response.json({ username: account.username, provider: account.googleSub ? 'google' : 'password', isAdmin: isAdmin(account), profile: playerProfiles[account.id] || null, revision: profileRevisions[account.id] || 0 });
 });
 
 app.post('/api/player-profile', (request, response) => {
@@ -327,7 +351,110 @@ function createRoom(id) {
     players: {}
   };
 }
-const rooms = new Map(['legacy', 'lobby1', 'lobby2', 'lobby3'].map(id => [id, createRoom(id)]));
+const initialRoomRegistry = {
+  lobby1: { seed: 1, active: true },
+  lobby2: { seed: 2, active: true },
+  lobby3: { seed: 3, active: true }
+};
+let roomRegistry = fs.existsSync(roomRegistryPath) ? JSON.parse(fs.readFileSync(roomRegistryPath, 'utf8')) : initialRoomRegistry;
+if (!roomRegistry || typeof roomRegistry !== 'object' || Array.isArray(roomRegistry) ||
+    !Object.entries(roomRegistry).every(([id, room]) => /^[a-z0-9_-]{1,24}$/.test(id) && id !== 'legacy' &&
+      room && Number.isInteger(room.seed) && room.seed >= 1 && room.seed <= 2147483647 && typeof room.active === 'boolean') ||
+    !Object.values(roomRegistry).some(room => room.active)) {
+  throw new Error('Invalid room registry; refusing to overwrite room data.');
+}
+const rooms = new Map([['legacy', createRoom('legacy')]]);
+for (const [id, entry] of Object.entries(roomRegistry)) if (entry.active) rooms.set(id, createRoom(id));
+
+app.get('/api/rooms', (request, response) => {
+  response.json(Object.entries(roomRegistry).filter(([, room]) => room.active).map(([id, room]) => ({ id, seed: room.seed })));
+});
+
+function requireAdmin(request, response, next) {
+  const account = getAccountFromRequest(request);
+  if (!account) return response.status(401).json({ error: 'Sign in is required.' });
+  if (!isAdmin(account)) return response.status(403).json({ error: 'Administrator access is required.' });
+  request.admin = account;
+  next();
+}
+
+app.get('/api/admin/status', requireAdmin, (request, response) => {
+  const online = Array.from(io.sockets.sockets.values()).map(socket => ({
+    accountId: socket.data.account.id, username: socket.data.account.username, room: socket.data.room.id
+  }));
+  const activeBans = Object.entries(bans).filter(([id]) => isBanned(id)).map(([accountId, ban]) => ({ accountId, until: ban.until }));
+  response.json({ online, bans: activeBans, rooms: roomRegistry });
+});
+
+app.post('/api/admin/rooms', requireAdmin, (request, response) => {
+  const id = typeof request.body.id === 'string' ? request.body.id.trim().toLowerCase() : '';
+  if (!/^[a-z0-9_-]{1,24}$/.test(id) || id === 'legacy') return response.status(400).json({ error: 'Invalid room name.' });
+  const existing = Object.hasOwn(roomRegistry, id) ? roomRegistry[id] : null;
+  if (existing?.active) return response.status(409).json({ error: 'Room already exists.' });
+  const entry = existing || { seed: crypto.randomInt(1, 2147483647), active: false };
+  const next = { ...roomRegistry, [id]: { ...entry, active: true } };
+  try {
+    const room = createRoom(id);
+    saveJson(roomRegistryPath, next);
+    roomRegistry = next;
+    rooms.set(id, room);
+  } catch (error) {
+    console.error('Failed to create room:', error);
+    return response.status(500).json({ error: 'Could not create or restore the room.' });
+  }
+  return response.status(201).json({ id, seed: entry.seed });
+});
+
+app.post('/api/admin/rooms/archive', requireAdmin, (request, response) => {
+  const id = request.body.id;
+  if (typeof id !== 'string' || !Object.hasOwn(roomRegistry, id) || !roomRegistry[id].active) return response.status(404).json({ error: 'Room not found.' });
+  if (Object.values(roomRegistry).filter(room => room.active).length <= 1) return response.status(400).json({ error: 'At least one room must remain.' });
+  if (Array.from(io.sockets.sockets.values()).some(socket => socket.data.room.id === id)) {
+    return response.status(409).json({ error: 'Room must be empty before archiving.' });
+  }
+  const next = { ...roomRegistry, [id]: { ...roomRegistry[id], active: false } };
+  try {
+    saveJson(roomRegistryPath, next);
+  } catch (error) {
+    console.error('Failed to archive room:', error);
+    return response.status(500).json({ error: 'Could not archive the room.' });
+  }
+  roomRegistry = next;
+  rooms.delete(id);
+  response.json({ ok: true });
+});
+
+app.post('/api/admin/moderation', requireAdmin, (request, response) => {
+  const { action, accountId, hours } = request.body;
+  const target = Object.values(accounts).find(account => account.id === accountId);
+  if (!target || target.id === request.admin.id || isAdmin(target)) return response.status(400).json({ error: 'Invalid target account.' });
+  if (!['kick', 'ban', 'unban'].includes(action)) return response.status(400).json({ error: 'Invalid moderation action.' });
+  if (action === 'ban' && !(hours === null || Number.isFinite(hours) && hours > 0 && hours <= 87600)) {
+    return response.status(400).json({ error: 'Ban duration must be positive hours or permanent.' });
+  }
+  if (action !== 'kick') {
+    const next = { ...bans };
+    if (action === 'ban') next[accountId] = { until: hours === null ? null : Date.now() + hours * 3600000 };
+    else delete next[accountId];
+    try {
+      saveJson(bansPath, next);
+    } catch (error) {
+      console.error('Failed to save moderation state:', error);
+      return response.status(500).json({ error: 'Could not save moderation state.' });
+    }
+    if (action === 'ban') bans[accountId] = next[accountId];
+    else delete bans[accountId];
+  }
+  if (action !== 'unban') {
+    if (action === 'ban') for (const [token, id] of sessions) if (id === accountId) sessions.delete(token);
+    for (const socket of io.sockets.sockets.values()) {
+      if (socket.data.account.id !== accountId) continue;
+      socket.emit('moderationAction', { message: action === 'ban' ? 'Your account has been banned.' : 'You were removed by an administrator.' });
+      socket.disconnect(true);
+    }
+  }
+  response.json({ ok: true });
+});
 
 const smeltDuration = 10000;
 
@@ -392,7 +519,7 @@ app.post('/api/furnace', (request, response) => {
       }
       if (furnace[slot]) furnace[slot].count++;
       else furnace[slot] = { type: source.type, count: 1 };
-      if (--source.count === 0) profile[request.body.container][request.body.index] = null;
+      if (!isAdmin(account) && --source.count === 0) profile[request.body.container][request.body.index] = null;
     } else if (action === 'take') {
       const source = furnace[slot];
       if (!source) return response.status(400).json({ error: 'The furnace slot is empty.' });
@@ -440,7 +567,11 @@ io.use((socket, next) => {
   const roomId = socket.handshake.query.room || 'legacy';
   const room = rooms.get(roomId);
   if (!room) return next(new Error('Invalid room.'));
+  const accountId = sessions.get(socket.handshake.auth?.token);
+  const account = Object.values(accounts).find(entry => entry.id === accountId);
+  if (!account || isBanned(account.id)) return next(new Error('Sign in is required or your account is banned.'));
   socket.data.room = room;
+  socket.data.account = account;
   next();
 });
 
