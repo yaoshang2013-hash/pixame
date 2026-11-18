@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>pixame</title>
+    <link rel="stylesheet" href="/style.css">
+    <script src="/node_modules/three/build/three.min.js"></script>
+    <script src="/node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+    <div id="room-picker">
+        <label for="room-select">ROOM</label>
+        <select id="room-select" aria-label="Room">
+            <option value="lobby1">Lobby 1</option>
+            <option value="lobby2">Lobby 2</option>
+            <option value="lobby3">Lobby 3</option>
+        </select>
+        <span id="room-message" role="status"></span>
+    </div>
+    <div id="room-switching" hidden>Saving room...</div>
+    <aside id="auth-screen" aria-label="Account sign in">
+        <div class="auth-card">
+            <h1 id="auth-title">SIGN IN</h1>
+            <p id="auth-description">Sign in to restore this player's saved inventory and position.</p>
+            <form id="auth-form" class="auth-form">
+                <label>USERNAME<input id="auth-username" name="username" autocomplete="username" minlength="3" maxlength="24" required></label>
+                <label>PASSWORD<input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+                <button id="auth-submit" type="submit">SIGN IN</button>
+            </form>
+            <button id="auth-switch" class="auth-switch" type="button">Need an account? Sign up</button>
+            <div id="google-sign-in"></div>
+            <div id="auth-message" role="alert"></div>
+        </div>
+    </aside>
+    <div id="crosshair" aria-hidden="true"></div>
+    <div id="selected-item-label" aria-live="polite" hidden></div>
+    <button id="inventory-toggle" type="button" aria-expanded="false" aria-controls="player-inventory" title="Press B to browse placeable blocks">INVENTORY [E]</button>
+    <aside id="block-palette" aria-label="Inventory and crafting" hidden>
+        <div class="palette-header"><span>INVENTORY</span><button class="palette-close" type="button" aria-label="Close inventory">X</button></div>
+        <div class="palette-tabs" role="tablist" aria-label="Inventory pages">
+            <button class="palette-tab" type="button" role="tab" aria-selected="true" data-palette-page="blocks">BLOCKS</button>
+            <button class="palette-tab" type="button" role="tab" aria-selected="false" data-palette-page="craft">CRAFT</button>
+        </div>
+        <div class="palette-page" data-palette-page-content="blocks">
+        <div class="palette-grid" id="built-in-block-grid">
+            <button class="palette-block" type="button" data-block-type="grass"><canvas class="item-icon" data-block-icon="grass" width="40" height="40"></canvas><span>Grass</span></button>
+            <button class="palette-block" type="button" data-block-type="dirt"><canvas class="item-icon" data-block-icon="dirt" width="40" height="40"></canvas><span>Dirt</span></button>
+            <button class="palette-block" type="button" data-block-type="sand"><canvas class="item-icon" data-block-icon="sand" width="40" height="40"></canvas><span>Sand</span></button>
+            <button class="palette-block" type="button" data-block-type="snow"><canvas class="item-icon" data-block-icon="snow" width="40" height="40"></canvas><span>Snow</span></button>
+            <button class="palette-block" type="button" data-block-type="wood"><canvas class="item-icon" data-block-icon="wood" width="40" height="40"></canvas><span>Wood</span></button>
+            <button class="palette-block" type="button" data-block-type="leaves"><canvas class="item-icon" data-block-icon="leaves" width="40" height="40"></canvas><span>Leaves</span></button>
+        </div>
+        <section id="spark-block-browser" aria-label="Spark texture blocks">
+            <h2 class="craft-section-title">SPARK BLOCKS</h2>
+            <div class="spark-block-filters">
+                <input id="spark-block-search" type="search" placeholder="Search blocks..." aria-label="Search Spark blocks">
+                <select id="spark-block-category" aria-label="Spark block category"><option value="all">All categories</option></select>
+            </div>
+            <div class="palette-grid spark-block-grid" id="spark-block-grid"></div>
+            <div class="spark-block-pagination"><button id="spark-block-previous" type="button">PREVIOUS</button><span id="spark-block-page-status">Loading Spark blocks...</span><button id="spark-block-next" type="button">NEXT</button></div>
+            <p class="craft-help">Spark PNGs are placed as textured cubes. Furniture PNGs are texture sheets; matching model files are needed for furniture shapes.</p>
+        </section>
+        </div>
+        <div class="palette-page" data-palette-page-content="craft" hidden>
+            <div class="craft-layout">
+                <section><h2 class="craft-section-title">RECIPES</h2><div id="recipe-list" class="recipe-list"></div></section>
+                <section><h2 class="craft-section-title">WORKBENCH 3×3</h2><div id="craft-grid" class="craft-grid"></div><div id="craft-output" class="craft-output">Add materials</div><div class="craft-help">Select an item, then click a cell to add one. Right-click a cell to return it. Right-click the result to collect it.</div></section>
+            </div>
+        </div>
+    </aside>
+    <aside id="player-inventory" aria-label="Player inventory" hidden>
+        <div class="inventory-window">
+            <div class="inventory-window-header"><span>PLAYER INVENTORY</span><div><button class="palette-close" type="button" data-open-blocks>BLOCKS</button> <button class="palette-close" type="button" data-close-player-inventory aria-label="Close player inventory">X</button></div></div>
+            <div class="inventory-content">
+                <section><h2 class="craft-section-title">BACKPACK</h2><div id="backpack-slots" class="inventory-slot-grid"></div></section>
+                <section><h2 class="craft-section-title">CRAFTING 2×2</h2><div id="player-craft-grid" class="inventory-craft-grid"></div><button id="player-craft-output" class="craft-output inventory-craft-output" type="button">Add materials</button></section>
+            </div>
+            <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="inventory-hotbar-slots" class="inventory-slot-grid"></div></section>
+            <p class="inventory-help">Drag items between slots to move, swap, or stack them. Click an item to select it; click an empty crafting cell to add one item, or right-click a filled cell to return it.</p>
+        </div>
+    </aside>
+    <aside id="workbench-screen" aria-label="Crafting table" hidden>
+        <div class="inventory-window workbench-window">
+            <div class="inventory-window-header"><span>CRAFTING TABLE</span><button class="palette-close" type="button" data-close-workbench aria-label="Close crafting table">X</button></div>
+            <div class="workbench-main">
+                <section><h2 class="craft-section-title">CRAFTING</h2><div id="workbench-craft-grid" class="craft-grid workbench-craft-grid"></div></section>
+                <div class="workbench-arrow" aria-hidden="true">→</div>
+                <section><h2 class="craft-section-title">RESULT</h2><button id="workbench-output" class="craft-output workbench-output" type="button">Add materials</button></section>
+            </div>
+            <section><h2 class="craft-section-title">BACKPACK</h2><div id="workbench-backpack-slots" class="inventory-slot-grid"></div></section>
+            <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="workbench-hotbar-slots" class="inventory-slot-grid"></div></section>
+            <p class="inventory-help">Drag items between backpack and hotbar slots. Click a selected material into any crafting slot; right-click a slot to return it or the result to collect it.</p>
+        </div>
+    </aside>
+    <aside id="furnace-screen" aria-label="Furnace" hidden>
+        <div class="inventory-window">
+            <div class="inventory-window-header"><span>FURNACE</span><button class="palette-close" type="button" data-close-furnace aria-label="Close furnace">X</button></div>
+            <div class="furnace-main">
+                <div class="furnace-inputs">
+                    <div><h2 class="craft-section-title">IRON ORE</h2><button id="furnace-input" class="craft-cell furnace-slot" type="button"></button></div>
+                    <div><h2 class="craft-section-title">FUEL</h2><button id="furnace-fuel" class="craft-cell furnace-slot" type="button"></button></div>
+                </div>
+                <div><div class="workbench-arrow" aria-hidden="true">→</div><div id="furnace-status" role="status">Loading...</div></div>
+                <div><h2 class="craft-section-title">IRON INGOT</h2><button id="furnace-output" class="craft-cell furnace-slot" type="button"></button></div>
+            </div>
+            <section><h2 class="craft-section-title">BACKPACK</h2><div id="furnace-backpack-slots" class="inventory-slot-grid"></div></section>
+            <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="furnace-hotbar-slots" class="inventory-slot-grid"></div></section>
+            <p class="inventory-help">Drag items between backpack and hotbar slots. Select an item, then click INPUT or FUEL to add one. Right-click a slot to take one; click OUTPUT to collect. One wood or plank smelts one ore in 10 seconds. Removing the last ore wastes the burning fuel.</p>
+        </div>
+    </aside>
+    <div id="hotbar" role="toolbar" aria-label="Inventory"></div>
+    <script src="/game.js"></script>
+</body>
+</html>

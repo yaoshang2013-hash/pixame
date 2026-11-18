@@ -1,0 +1,16 @@
+{
+  "name": "pixame",
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "google-auth-library": "^11.3.4",
+    "socket.io": "^4.8.3",
+    "three": "0.128.0"
+  }
+}
