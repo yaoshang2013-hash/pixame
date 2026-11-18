@@ -135,6 +135,7 @@
             <div id="admin-message" role="status"></div>
         </div>
     </aside>
+    <script src="/biomes.js"></script>
     <script>
         fetch('/api/rooms').then(response => {
             if (!response.ok) throw new Error('Could not load rooms.');

@@ -173,7 +173,9 @@
         scene.add(sun);
 
         const tile = 16;
-        const atlasW = tile * 22, atlasH = tile;
+        const treeSpecies = ['spruce', 'jungle', 'acacia', 'cherry', 'birch'];
+        const atlasTileCount = 22 + treeSpecies.length * 3;
+        const atlasW = tile * atlasTileCount, atlasH = tile;
         const atlas = document.createElement('canvas');
         atlas.width = atlasW;
         atlas.height = atlasH;
@@ -304,6 +306,11 @@
         actx.fillStyle = '#646866';
         actx.fillRect(tile * 21 + 7, 0, 2, tile);
         actx.fillRect(tile * 21, 7, tile, 2);
+        treeSpecies.forEach((species, index) => {
+            for (let part = 0; part < 3; part++) {
+                actx.drawImage(atlas, (8 + part) * tile, 0, tile, tile, (22 + index * 3 + part) * tile, 0, tile, tile);
+            }
+        });
 
         let blockTexture = new THREE.CanvasTexture(atlas);
         blockTexture.magFilter = THREE.NearestFilter;
@@ -792,7 +799,12 @@
                 {key:'craftingTableTop', src:'crafting_table_top.png'},
                 {key:'furnaceSide', src:'furnace_side.png'},
                 {key:'furnaceFront', src:'furnace_front.png'},
-                {key:'furnaceTop', src:'furnace_top.png'}
+                {key:'furnaceTop', src:'furnace_top.png'},
+                ...treeSpecies.flatMap(species => [
+                    {key:`${species}Log`, src:`${species}_log.png`},
+                    {key:`${species}LogTop`, src:`${species}_log_top.png`},
+                    {key:`${species}Leaves`, src:`${species}_leaves.png`}
+                ])
             ];
             const images = {};
             let loaded = 0;
@@ -858,6 +870,12 @@
                 drawTile('furnaceSide', tile * 19);
                 drawTile('furnaceFront', tile * 20);
                 drawTile('furnaceTop', tile * 21);
+                treeSpecies.forEach((species, index) => {
+                    const start = 22 + index * 3;
+                    drawTile(`${species}Log`, tile * start);
+                    drawTile(`${species}LogTop`, tile * (start + 1));
+                    drawTile(`${species}Leaves`, tile * (start + 2));
+                });
                 blockTexture.image = canvas2;
                 blockTexture.needsUpdate = true;
                 drawAllBlockIcons();
@@ -895,7 +913,7 @@
         tryLoadMinecraftTextures(() => updateLowDetailColors());
 
         const blockGeo = new THREE.BoxGeometry(1, 1, 1);
-        const tileU = 1 / 22;
+        const tileU = 1 / atlasTileCount;
         const textureZoom = 1.0;
         function setFaceUV(geometry, faceIndex, tx) {
             const uv = geometry.attributes.uv.array;
@@ -939,10 +957,10 @@
         const blockMat = new THREE.MeshStandardMaterial({map: blockTexture, roughness: 0.9, metalness: 0});
         const biomeBlockMat = new THREE.MeshStandardMaterial({map: blockTexture, roughness: 0.9, metalness: 0});
         const floorGroup = new THREE.Group();
-        const chunkSize = 16;
+        const chunkSize = PixameBiomes.chunkSize;
         const worldBottomY = -32;
-        const chunkRadius = 24;
-        const highDetailRadius = chunkSize * 5;
+        const chunkRadius = 12;
+        const highDetailRadius = 80;
         const waterLevel = 1.03;
         const terrainChunks = new Map();
         const itemDefinitions = {
@@ -1634,6 +1652,18 @@
         const leavesGeo = blockGeo.clone();
         applyTextureSet(leavesGeo, 'leaves');
         const leavesMaterial = new THREE.MeshStandardMaterial({map: blockTexture, alphaTest: 0.35, roughness: 1, metalness: 0});
+        const treeGeometries = Object.fromEntries(treeSpecies.map((species, index) => {
+            const log = blockGeo.clone();
+            const leaves = blockGeo.clone();
+            const start = 22 + index * 3;
+            for (let face = 0; face < 6; face++) {
+                setFaceUV(log, face, face === 2 || face === 3 ? start + 1 : start);
+                setFaceUV(leaves, face, start + 2);
+            }
+            log.attributes.uv.needsUpdate = true;
+            leaves.attributes.uv.needsUpdate = true;
+            return [species, {log, leaves}];
+        }));
         const grassSideMaterial = blockMat.clone();
         grassSideMaterial.onBeforeCompile = shader => {
             shader.vertexShader = shader.vertexShader.replace(
@@ -1654,19 +1684,27 @@
         grassOverlayGeo.scale(1.002, 1, 1.002);
         grassOverlayGeo.clearGroups();
         for (const face of [0, 1, 4, 5]) grassOverlayGeo.addGroup(face * 6, 6, 0);
-        function grassBiomeColor(column) {
-            if (!grassColorMap) return [1, 1, 1];
-            const snow = Math.max(0, Math.min(1, column.snowWeight));
-            const desert = Math.max(0, Math.min(1, column.desertWeight));
+        let foliageColorMap = null;
+        function sampleClimateColor(map, column) {
+            if (!map) return [1, 1, 1];
+            const temperature = clamp01(column.temperature ?? 0.6);
+            const moisture = clamp01(column.moisture ?? 0.6);
             const sample = (x, y) => {
-                const px = Math.round(x * (grassColorMap.width - 1));
-                const py = Math.round(y * (grassColorMap.height - 1));
-                const offset = (py * grassColorMap.width + px) * 4;
-                return Array.from(grassColorMap.data.slice(offset, offset + 3), channel => channel / 255);
+                const px = Math.round(x * (map.width - 1));
+                const py = Math.round(y * (map.height - 1));
+                const offset = (py * map.width + px) * 4;
+                return Array.from(map.data.slice(offset, offset + 3), channel => channel / 255);
             };
-            const warm = sample(0.05, 0.25 + desert * 0.7);
+            const color = sample(1 - temperature, 1 - temperature * moisture);
+            const snow = clamp01(column.snowWeight ?? 0);
             const cold = sample(0.85, 0.05);
-            return warm.map((channel, index) => channel * (1 - snow) + cold[index] * snow);
+            return color.map((channel, index) => channel * (1 - snow) + cold[index] * snow);
+        }
+        function grassBiomeColor(column) {
+            return sampleClimateColor(grassColorMap, column);
+        }
+        function foliageBiomeColor(column, species) {
+            return species === 'cherry' ? [1, 1, 1] : sampleClimateColor(foliageColorMap, column);
         }
         const lowDetailSideTiles = {
             grass: 0, dirt: 3, sand: 6, snow: 11, wood: 8, leaves: 10,
@@ -1675,6 +1713,10 @@
         const lowDetailMaterials = Object.fromEntries(Object.keys(lowDetailSideTiles).map(type => [
             type, new THREE.MeshStandardMaterial({roughness: 0.9, metalness: 0})
         ]));
+        const lowTreeMaterials = Object.fromEntries(treeSpecies.map(species => [species, {
+            wood: new THREE.MeshStandardMaterial({roughness: 0.9, metalness: 0}),
+            leaves: new THREE.MeshStandardMaterial({roughness: 0.9, metalness: 0})
+        }]));
         let lowGrassBase = [1, 1, 1];
         let lowGrassOverlay = null;
 
@@ -1714,6 +1756,11 @@
                     applyLowDetailPixel(lowDetailMaterials[type], pixel);
                 }
             }
+            treeSpecies.forEach((species, index) => {
+                const start = 22 + index * 3;
+                applyLowDetailPixel(lowTreeMaterials[species].wood, sampleOpaquePixel(blockTexture.image, start * tile, 0, tile, tile));
+                applyLowDetailPixel(lowTreeMaterials[species].leaves, sampleOpaquePixel(blockTexture.image, (start + 2) * tile, 0, tile, tile));
+            });
             refreshGrassColors();
         }
 
@@ -1779,6 +1826,7 @@
             mesh.receiveShadow = true;
             mesh.frustumCulled = false;
             targetGroup.add(mesh);
+            return mesh;
         }
 
         function addWaterInstances(targetGroup, cells) {
@@ -1889,8 +1937,10 @@
         }
 
         function sampleTerrainColumn(worldX, worldZ) {
-            const baseTemperature = clamp01(0.5 + fbmNoise(worldX * 0.006 + 137.2, worldZ * 0.006 - 91.7) * 0.9);
-            const moisture = clamp01(0.5 + fbmNoise(worldX * 0.008 - 213.6, worldZ * 0.008 + 47.3) * 0.95);
+            const climate = PixameBiomes.sampleClimate(worldX, worldZ, roomSeeds[roomId]);
+            const region = climate.region;
+            const baseTemperature = climate.temperature;
+            const moisture = climate.moisture;
             const warmWeight = smoothstep(0.58, 0.84, baseTemperature);
             const dryWeight = 1 - smoothstep(0.3, 0.7, moisture);
             const broadDesertWeight = warmWeight * dryWeight;
@@ -1919,15 +1969,10 @@
             const height = isWater ? -1 : terrainHeight;
             const biome = isWater ? 'river'
                 : mountainness > 0.52 ? 'mountain'
-                : snowWeight > 0.55 ? 'snow'
-                : desertWeight > 0.55 ? 'desert'
-                : moisture > 0.62 ? 'forest'
-                : 'plains';
+                : region.name;
             const surfaceType = biome === 'desert' ? 'sand' : 'grass';
-            const treeDensity = biome === 'forest' ? 0.075
-                : biome === 'plains' ? 0.018
-                : biome === 'mountain' ? 0.008
-                : 0;
+            const treeSpecies = biome === 'river' ? null : biome === 'mountain' ? 'spruce' : region.tree;
+            const treeDensity = biome === 'river' ? 0 : biome === 'mountain' ? 0.008 : region.density;
             const grassRed = 0.36 - moisture * 0.05;
             const grassGreen = 0.52 + moisture * 0.16;
             const grassBlue = 0.18 + moisture * 0.04;
@@ -1936,7 +1981,7 @@
                 grassGreen * grassWeight + 0.68 * desertWeight + 0.88 * snowWeight,
                 grassBlue * grassWeight + 0.42 * desertWeight + 0.98 * snowWeight
             ];
-            return {height, temperature, moisture, mountainness, mountainRelief, riverField, riverWeight, isWater, snowWeight, desertWeight, grassWeight, biome, surfaceType, treeDensity, color};
+            return {height, temperature, moisture, mountainness, mountainRelief, riverField, riverWeight, isWater, snowWeight, desertWeight, grassWeight, biome, surfaceType, treeSpecies, treeDensity, color};
         }
 
         function sampleTerrainHeight(worldX, worldZ) {
@@ -1985,12 +2030,12 @@
             const highCraftingTables = [];
             const highFurnaces = [];
             const highLeaves = [];
+            const treeBlocks = new Map();
             const highSparkBlocks = new Map();
             const highSparkModelBlocks = [];
             const lowTerrainBlocks = new Map();
             const lowPlacedBlocks = new Map();
             const lowSparkBlocks = new Map();
-            const lowTreeBlocks = new Map();
             const waterCells = [];
             const waterBed = [];
             const treeKeys = [];
@@ -2093,27 +2138,31 @@
 
                     const treeValue = Math.sin(x * 127.1 + z * 311.7) * 43758.5453;
                     const treeRoll = treeValue - Math.floor(treeValue);
-                    if (treeRoll >= column.treeDensity || x < startX + 2 || x >= startX + chunkSize - 2 || z < startZ + 2 || z >= startZ + chunkSize - 2) continue;
+                    if (!column.treeSpecies || treeRoll >= column.treeDensity || x < startX + 2 || x >= startX + chunkSize - 2 || z < startZ + 2 || z >= startZ + chunkSize - 2) continue;
 
                     const heightValue = Math.sin(x * 269.5 + z * 183.3) * 15731.743;
-                    const trunkHeight = 3 + Math.floor((heightValue - Math.floor(heightValue)) * 2);
+                    const variation = Math.floor((heightValue - Math.floor(heightValue)) * 2);
+                    const species = column.treeSpecies;
+                    const trunkHeight = (species === 'spruce' || species === 'jungle' ? 5 : 3) + variation;
                     const treeBaseY = height;
-                    const addTreeBlock = (treeX, treeY, treeZ, type, tint) => {
+                    if (!treeBlocks.has(species)) treeBlocks.set(species, {wood: [], leaves: []});
+                    const addTreeBlock = (treeX, treeY, treeZ, type) => {
                         const key = blockKey(treeX, treeY, treeZ);
-                        if (removedBlocks.has(key)) return;
+                        if (removedBlocks.has(key) || placedBlocks.has(key)) return;
                         treeKeys.push(key);
-                        if (lod === 'low') {
-                            addGroupedBlock(lowTreeBlocks, type, [treeX, treeY, treeZ]);
-                        } else if (type === 'wood') {
-                            highWood.push([treeX, treeY, treeZ]);
-                        } else {
-                            highLeaves.push([treeX, treeY, treeZ]);
-                        }
+                        treeBlocks.get(species)[type].push(type === 'leaves'
+                            ? [treeX, treeY, treeZ, 1, ...foliageBiomeColor(column, species)]
+                            : [treeX, treeY, treeZ]);
                     };
                     for (let y = treeBaseY; y < treeBaseY + trunkHeight; y++) {
-                        addTreeBlock(x, y, z, 'wood', [0.42, 0.28, 0.15]);
+                        addTreeBlock(x, y, z, 'wood');
                     }
-                    const canopyLayers = [
+                    const canopyLayers = species === 'spruce' ? [
+                        {offset: -3, radius: 2}, {offset: -2, radius: 1}, {offset: -1, radius: 2},
+                        {offset: 0, radius: 1}, {offset: 1, radius: 0}
+                    ] : species === 'acacia' ? [
+                        {offset: -1, radius: 2}, {offset: 0, radius: 2}, {offset: 1, radius: 1}
+                    ] : [
                         {offset: -2, radius: 2},
                         {offset: -1, radius: 2},
                         {offset: 0, radius: 1},
@@ -2125,7 +2174,7 @@
                             for (let dz = -layer.radius; dz <= layer.radius; dz++) {
                                 if (Math.abs(dx) === layer.radius && Math.abs(dz) === layer.radius && layer.radius > 1) continue;
                                 if (dx === 0 && dz === 0 && leafY < treeBaseY + trunkHeight) continue;
-                                addTreeBlock(x + dx, leafY, z + dz, 'leaves', [0.28, 0.56, 0.22]);
+                                addTreeBlock(x + dx, leafY, z + dz, 'leaves');
                             }
                         }
                     }
@@ -2149,10 +2198,13 @@
                         } else if (lod === 'low') {
                             addGroupedBlock(lowPlacedBlocks, type, type === 'grass'
                                 ? [x, y, z, 1, ...lowGrassColor(columnAt(x, z))]
+                                : type === 'leaves' ? [x, y, z, 1, ...foliageBiomeColor(columnAt(x, z), 'oak')]
                                 : [x, y, z]);
                         } else {
                             const blocks = type === 'grass' ? highGrass : type === 'sand' ? highSand : type === 'snow' ? highSnow : type === 'wood' ? highWood : type === 'planks' ? highPlanks : type === 'crafting_table' ? highCraftingTables : type === 'furnace' ? highFurnaces : type === 'leaves' ? highLeaves : type === 'iron_ore' ? highIronOre : type === 'stone' ? highStone : highDirt;
-                            blocks.push(type === 'grass' ? [x, y, z, 1, ...grassBiomeColor(columnAt(x, z))] : [x, y, z]);
+                            blocks.push(type === 'grass' ? [x, y, z, 1, ...grassBiomeColor(columnAt(x, z))]
+                                : type === 'leaves' ? [x, y, z, 1, ...foliageBiomeColor(columnAt(x, z), 'oak')]
+                                : [x, y, z]);
                         }
                     }
                 }
@@ -2171,19 +2223,31 @@
                 addBlockInstances(chunkGroup, highPlanks, planksGeo, blockMat, 'planks');
                 addBlockInstances(chunkGroup, highCraftingTables, craftingTableGeo, blockMat, 'crafting_table');
                 addBlockInstances(chunkGroup, highFurnaces, furnaceGeo, blockMat, 'furnace');
-                addBlockInstances(chunkGroup, highLeaves, leavesGeo, leavesMaterial, 'leaves');
+                const placedLeaves = addBlockInstances(chunkGroup, highLeaves, leavesGeo, leavesMaterial, 'leaves');
+                if (placedLeaves) placedLeaves.userData.foliageSpecies = 'oak';
                 for (const [type, blocks] of highSparkBlocks) {
                     addBlockInstances(chunkGroup, blocks, blockGeo, getSparkBlockMaterial(type), type);
                 }
             } else {
-                for (const blocksByType of [lowTerrainBlocks, lowPlacedBlocks, lowTreeBlocks]) {
+                for (const blocksByType of [lowTerrainBlocks, lowPlacedBlocks]) {
                     for (const [type, blocks] of blocksByType) {
-                        addBlockInstances(chunkGroup, blocks, blockGeo, lowDetailMaterials[type], type);
+                        const mesh = addBlockInstances(chunkGroup, blocks, blockGeo, lowDetailMaterials[type], type);
+                        if (mesh && type === 'leaves') mesh.userData.foliageSpecies = 'oak';
                     }
                 }
                 for (const [type, blocks] of lowSparkBlocks) {
                     addBlockInstances(chunkGroup, blocks, blockGeo, getLowSparkMaterial(type), type);
                 }
+            }
+            for (const [species, blocks] of treeBlocks) {
+                const geometry = treeGeometries[species];
+                const logGeometry = lod === 'low' ? blockGeo : geometry ? geometry.log : woodGeo;
+                const leafGeometry = lod === 'low' ? blockGeo : geometry ? geometry.leaves : leavesGeo;
+                const logMaterial = lod === 'low' ? (lowTreeMaterials[species]?.wood || lowDetailMaterials.wood) : blockMat;
+                const leafMaterial = lod === 'low' ? (lowTreeMaterials[species]?.leaves || lowDetailMaterials.leaves) : leavesMaterial;
+                addBlockInstances(chunkGroup, blocks.wood, logGeometry, logMaterial, 'wood');
+                const leaves = addBlockInstances(chunkGroup, blocks.leaves, leafGeometry, leafMaterial, 'leaves');
+                if (leaves) leaves.userData.foliageSpecies = species;
             }
             for (const [x, y, z, type, model] of highSparkModelBlocks) {
                 chunkGroup.add(createSparkBlockModel(type, model, x, y, z));
@@ -2282,12 +2346,15 @@
                     if (terrainChunks.get(`${chunk.chunkX},${chunk.chunkZ}`) !== chunk) continue;
                     const colors = new Map();
                     for (const mesh of chunk.group.children) {
-                        if (!mesh.isInstancedMesh || mesh.userData.blockType !== 'grass') continue;
+                        if (!mesh.isInstancedMesh ||
+                            (mesh.userData.blockType !== 'grass' && !mesh.userData.foliageSpecies)) continue;
                         mesh.userData.blockRecords.forEach(([x, , z], index) => {
-                            const key = terrainColumnKey(x, z);
+                            const species = mesh.userData.foliageSpecies;
+                            const key = `${terrainColumnKey(x, z)}:${species || 'grass'}`;
                             if (!colors.has(key)) {
                                 const column = sampleTerrainColumn(x, z);
-                                colors.set(key, chunk.lod === 'low' ? lowGrassColor(column) : grassBiomeColor(column));
+                                colors.set(key, species ? foliageBiomeColor(column, species)
+                                    : chunk.lod === 'low' ? lowGrassColor(column) : grassBiomeColor(column));
                             }
                             color.setRGB(...colors.get(key));
                             mesh.setColorAt(index, color);
@@ -2313,6 +2380,18 @@
         };
         grassColorMapImage.onerror = error => console.error('Failed to load grass colormap:', error);
         grassColorMapImage.src = '/assets/textures/colormap/grass.png';
+        const foliageColorMapImage = new Image();
+        foliageColorMapImage.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = foliageColorMapImage.naturalWidth;
+            canvas.height = foliageColorMapImage.naturalHeight;
+            const context = canvas.getContext('2d', {willReadFrequently: true});
+            context.drawImage(foliageColorMapImage, 0, 0);
+            foliageColorMap = context.getImageData(0, 0, canvas.width, canvas.height);
+            refreshGrassColors();
+        };
+        foliageColorMapImage.onerror = error => console.error('Failed to load foliage colormap:', error);
+        foliageColorMapImage.src = '/assets/textures/colormap/foliage.png';
 
         function playPlayerAnimation(animationName) {
             if (!playerModelMixer || activePlayerAnimation === animationName) return;

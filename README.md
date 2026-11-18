@@ -48,3 +48,16 @@ hosting server before they are available there.
 Faraway blocks use the top-left pixel of their side texture as a single color.
 Grass retains its biome tint; textures with a transparent corner use their first
 visible pixel. Nearby blocks keep their full textures and models.
+
+## Biomes
+
+Chunks are 32×32 blocks. Each seeded climate region covers 4×4 chunks, with
+local rivers and mountains. Regions include plains, meadow, forest, taiga,
+rainforest, savanna, tundra, cherry grove, snow and desert. Temperature and
+humidity tint grass and foliage, and tree shapes and textures vary by region.
+Naturally generated tree blocks currently drop the existing generic wood and
+leaves items.
+
+The biome generator applies to all rooms. Player edits and saves are retained,
+but previously generated natural terrain and trees can change under existing
+builds when the updated game is deployed.
