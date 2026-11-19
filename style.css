@@ -1,4 +1,4 @@
-        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #87CEEB; touch-action: none; }
+        html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #87CEEB; }
         canvas { display: block; }
         .bitmap-text { position: relative; }
         .bitmap-text-source { position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
@@ -8,12 +8,21 @@
         #crosshair::before, #crosshair::after { content: ""; position: absolute; left: 50%; top: 50%; background: #f7f3df; box-shadow: 0 0 0 1px rgba(15,20,24,0.82), 0 0 8px rgba(0,0,0,0.6); transform: translate(-50%, -50%); }
         #crosshair::before { width: 2px; height: 18px; }
         #crosshair::after { width: 18px; height: 2px; }
+        #mobile-mode-toggle { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 8; padding: 8px; color: #eaf2e5; background: #192720; border: 1px solid #becbb9; font: bold 10px monospace; }
+        #mobile-controls { position: fixed; inset: 0; z-index: 7; pointer-events: none; }
+        #mobile-controls[hidden] { display: none; }
+        #mobile-joystick { position: absolute; left: 20px; bottom: 105px; width: 110px; height: 110px; border: 2px solid rgba(255,255,255,.55); border-radius: 50%; background: rgba(15,25,28,.38); pointer-events: auto; touch-action: none; }
+        #mobile-joystick-knob { position: absolute; left: 35px; top: 35px; width: 40px; height: 40px; border-radius: 50%; background: rgba(225,245,215,.65); pointer-events: none; }
+        #mobile-actions { position: absolute; right: 12px; bottom: 100px; display: grid; grid-template-columns: repeat(2, 64px); gap: 7px; pointer-events: auto; }
+        #mobile-actions button { min-height: 48px; color: white; background: rgba(15,25,28,.7); border: 1px solid #becbb9; border-radius: 9px; font: bold 10px monospace; touch-action: none; }
+        #mobile-actions button[aria-pressed="true"] { color: #182018; background: #cceba8; }
+        body.mobile-mode #inventory-toggle { bottom: 65px; }
         #selected-item-label { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); color: #fff5c2; font: bold 13px monospace; letter-spacing: 0.08em; text-shadow: 0 2px 3px #000; pointer-events: none; z-index: 6; }
         #selected-item-label.is-showing { animation: item-notification 1.8s cubic-bezier(0.2, 1.35, 0.45, 1); }
         #inventory-toggle { position: fixed; right: 18px; bottom: 18px; padding: 9px 11px; color: #f0f2e9; background: rgba(15,25,28,0.88); border: 1px solid rgba(209,237,197,0.42); box-shadow: 0 4px 14px rgba(0,0,0,0.28); font: bold 10px monospace; letter-spacing: 0.06em; cursor: pointer; z-index: 7; }
         #inventory-toggle:hover, #inventory-toggle[aria-expanded="true"] { color: #182018; background: #cceba8; }
         #inventory-toggle:active { transform: translateY(2px) scale(0.96); }
-        #block-palette { position: fixed; left: 50%; bottom: 94px; width: min(440px, calc(100vw - 32px)); transform: translateX(-50%); padding: 13px; color: #eaf2e5; background: linear-gradient(135deg, rgba(15,25,28,0.97), rgba(31,49,42,0.95)); border: 2px solid #becbb9; border-radius: 14px; outline: 2px solid rgba(14,22,24,0.82); box-shadow: 0 10px 28px rgba(0,0,0,0.46); font: 12px monospace; z-index: 8; }
+        #block-palette { position: fixed; left: 50%; bottom: 94px; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 130px); overflow-y: auto; transform: translateX(-50%); padding: 13px; color: #eaf2e5; background: linear-gradient(135deg, rgba(15,25,28,0.97), rgba(31,49,42,0.95)); border: 2px solid #becbb9; border-radius: 14px; outline: 2px solid rgba(14,22,24,0.82); box-shadow: 0 10px 28px rgba(0,0,0,0.46); font: 12px monospace; z-index: 8; }
         #block-palette.is-opening { animation: palette-open 0.28s cubic-bezier(0.2, 1.32, 0.4, 1); }
         .palette-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; color: #cceba8; font-weight: bold; letter-spacing: 0.1em; }
         .palette-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
@@ -87,7 +96,7 @@
         .auth-switch { margin-top: 12px; color: #cceba8; background: transparent; border: 0; font: 16px monospace; cursor: pointer; text-decoration: underline; }
         #google-sign-in { margin-top: 14px; min-height: 40px; }
         #auth-message { min-height: 16px; margin-top: 10px; color: #ffb0a5; font: 16px monospace; }
-        .inventory-window { width: min(510px, calc(100vw - 36px)); padding: 14px; color: #eaf2e5; background: linear-gradient(135deg, rgba(15,25,28,0.98), rgba(31,49,42,0.97)); border: 2px solid #becbb9; border-radius: 14px; outline: 2px solid rgba(14,22,24,0.82); box-shadow: 0 16px 42px rgba(0,0,0,0.58); font: 11px monospace; }
+        .inventory-window { width: min(510px, calc(100vw - 36px)); max-height: calc(100vh - 64px); overflow-y: auto; padding: 14px; color: #eaf2e5; background: linear-gradient(135deg, rgba(15,25,28,0.98), rgba(31,49,42,0.97)); border: 2px solid #becbb9; border-radius: 14px; outline: 2px solid rgba(14,22,24,0.82); box-shadow: 0 16px 42px rgba(0,0,0,0.58); font: 11px monospace; }
         .inventory-window-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; color: #cceba8; font-weight: bold; letter-spacing: 0.1em; }
         .inventory-content { display: grid; grid-template-columns: 1fr 154px; gap: 14px; }
         .inventory-slot-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 4px; }
@@ -119,7 +128,38 @@
         .hotbar-slot .slot-number { position: absolute; top: 2px; left: 4px; color: #cdd8cf; font: 10px monospace; text-shadow: 1px 1px #000; }
         .item-icon { display: block; width: 32px; height: 32px; margin: 9px auto 0; image-rendering: pixelated; }
         .hotbar-slot .item-count { position: absolute; right: 4px; bottom: 2px; font: bold 12px monospace; color: #fff; text-shadow: 1px 1px #000; }
+        :root { --ui-surface: rgba(25, 30, 32, 0.68); --ui-control: rgba(20, 25, 27, 0.58); --ui-border: rgba(0, 0, 0, 0.94); }
+        #block-palette, .inventory-window, .auth-card, #hotbar { background: var(--ui-surface); border: 2px solid var(--ui-border); border-radius: 14px; outline: none; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+        #room-picker, #inventory-toggle, #mobile-mode-toggle, #admin-flight, #admin-open { background: var(--ui-surface); border: 2px solid var(--ui-border); border-radius: 10px; }
+        #player-inventory, #workbench-screen, #furnace-screen, #admin-screen, #auth-screen { background: rgba(0,0,0,0.3); }
+        #mobile-joystick { background: var(--ui-control); border-color: var(--ui-border); }
+        #mobile-joystick-knob { background: rgba(235,245,235,0.65); border: 1px solid var(--ui-border); }
+        #mobile-actions button, .palette-tab, .palette-close, .palette-block, .recipe-card,
+        .craft-cell, .craft-output, .inventory-slot, .hotbar-slot, .hotbar-slot.empty,
+        .spark-block-pagination button, .spark-block-filters input, .spark-block-filters select,
+        #admin-creative-items select, #admin-creative-items button, #room-select,
+        .auth-form input, .auth-form button, .auth-switch, #admin-screen input, #admin-screen button {
+            color: #f0f4ee;
+            background: var(--ui-control);
+            border: 1px solid var(--ui-border);
+            border-radius: 7px;
+        }
+        .auth-switch { padding: 7px 10px; }
+        #inventory-toggle:hover, #inventory-toggle[aria-expanded="true"],
+        #mobile-actions button[aria-pressed="true"], .palette-tab[aria-selected="true"],
+        .palette-block:hover, .palette-block:focus-visible, .recipe-card:enabled:hover,
+        .hotbar-slot:hover, .auth-form button:hover {
+            color: #101914;
+            background: rgba(195,225,202,0.82);
+            border-color: var(--ui-border);
+        }
+        .inventory-slot:hover, .inventory-slot.selected, .hotbar-slot.selected {
+            border-color: var(--ui-border);
+            box-shadow: inset 0 0 0 2px rgba(235,250,231,0.9);
+        }
+        .inventory-slot.drag-over { border-color: var(--ui-border); box-shadow: inset 0 0 0 2px #cceba8; }
         @keyframes slot-select { 0% { transform: scale(0.82); } 65% { transform: scale(1.12); } 100% { transform: scale(1); } }
         @keyframes palette-open { 0% { transform: translateX(-50%) translateY(24px) scale(0.82); opacity: 0; } 70% { transform: translateX(-50%) translateY(-3px) scale(1.025); opacity: 1; } 100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } }
         @keyframes item-notification { 0% { transform: translateX(-50%) translateY(9px) scale(0.82); opacity: 0; } 15%, 75% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } 100% { transform: translateX(-50%) translateY(-5px) scale(0.96); opacity: 0; } }
         @media (max-width: 600px) { #inventory-toggle { right: 10px; bottom: 10px; padding: 7px 8px; font-size: 8px; } #block-palette { bottom: 66px; padding: 9px; } .palette-grid { gap: 3px; } .palette-block { min-height: 64px; font-size: 7px; } .palette-block .item-icon { width: 31px; height: 31px; } .craft-layout { grid-template-columns: 1fr; } .recipe-list { max-height: 120px; } #player-inventory, #workbench-screen { padding: 8px; } .inventory-window { padding: 10px; } .inventory-content { grid-template-columns: 1fr 128px; gap: 8px; } .inventory-craft-grid { grid-template-columns: repeat(2, 42px); } .inventory-craft-grid .craft-cell { width: 42px; height: 42px; } .inventory-craft-grid .craft-cell .item-icon { width: 36px; height: 36px; } .workbench-main { grid-template-columns: 1fr 44px 1fr; gap: 5px; } .workbench-craft-grid { grid-template-columns: repeat(3, 38px); gap: 4px; } .workbench-craft-grid .craft-cell { width: 38px; height: 38px; } .workbench-craft-grid .craft-cell .item-icon { width: 32px; height: 32px; } #hotbar { bottom: 10px; gap: 2px; padding: 3px; } .hotbar-slot { width: 39px; height: 43px; } .hotbar-slot .item-icon { width: 25px; height: 25px; margin-top: 8px; } #selected-item-label { bottom: 78px; font-size: 11px; } }
+        @media (max-height: 500px) { #block-palette { bottom: 10px; max-height: calc(100vh - 48px); } }

@@ -122,6 +122,7 @@
         const canPointerLock = 'pointerLockElement' in document || 'mozPointerLockElement' in document || 'webkitPointerLockElement' in document;
         const usePointerLock = canPointerLock && !isiPad;
         const wantsFullscreen = isiPad;
+        let mobileMode = window.matchMedia('(pointer: coarse)').matches;
 
         function enterFullscreen() {
             const el = document.documentElement;
@@ -139,6 +140,7 @@
         renderer.domElement.style.position = 'fixed';
         renderer.domElement.style.inset = '0';
         renderer.domElement.style.zIndex = '0';
+        renderer.domElement.style.touchAction = 'none';
         document.body.appendChild(renderer.domElement);
 
         function resize() {
@@ -173,8 +175,11 @@
         scene.add(sun);
 
         const tile = 16;
-        const treeSpecies = ['spruce', 'jungle', 'acacia', 'cherry', 'birch'];
-        const atlasTileCount = 22 + treeSpecies.length * 3;
+        const treeSpecies = ['spruce', 'jungle', 'acacia', 'cherry', 'birch', 'dark_oak'];
+        const treeBlockType = (species, part) => species === 'oak' ? part : `${species}_${part}`;
+        const caveBlockTypes = ['moss_block', 'packed_ice', 'glow_mushroom', 'mushroom_stem'];
+        const caveTileStart = 22 + treeSpecies.length * 3;
+        const atlasTileCount = caveTileStart + caveBlockTypes.length;
         const atlasW = tile * atlasTileCount, atlasH = tile;
         const atlas = document.createElement('canvas');
         atlas.width = atlasW;
@@ -311,6 +316,9 @@
                 actx.drawImage(atlas, (8 + part) * tile, 0, tile, tile, (22 + index * 3 + part) * tile, 0, tile, tile);
             }
         });
+        caveBlockTypes.forEach((type, index) => {
+            actx.drawImage(atlas, 12 * tile, 0, tile, tile, (caveTileStart + index) * tile, 0, tile, tile);
+        });
 
         let blockTexture = new THREE.CanvasTexture(atlas);
         blockTexture.magFilter = THREE.NearestFilter;
@@ -333,6 +341,14 @@
             iron_ore: {side: 17, top: 17},
             furnace: {side: 19, right: 20, top: 21}
         };
+        treeSpecies.forEach((species, index) => {
+            const start = 22 + index * 3;
+            blockIconTiles[treeBlockType(species, 'wood')] = {side: start, top: start + 1};
+            blockIconTiles[treeBlockType(species, 'leaves')] = {side: start + 2, top: start + 2};
+        });
+        caveBlockTypes.forEach((type, index) => {
+            blockIconTiles[type] = {side: caveTileStart + index, top: caveTileStart + index};
+        });
 
         function drawBlockIcon(canvas, type) {
             const tiles = blockIconTiles[type];
@@ -804,7 +820,11 @@
                     {key:`${species}Log`, src:`${species}_log.png`},
                     {key:`${species}LogTop`, src:`${species}_log_top.png`},
                     {key:`${species}Leaves`, src:`${species}_leaves.png`}
-                ])
+                ]),
+                {key:'moss_block', src:'moss_block.png'},
+                {key:'packed_ice', src:'packed_ice.png'},
+                {key:'glow_mushroom', src:'red_mushroom_block.png'},
+                {key:'mushroom_stem', src:'mushroom_stem.png'}
             ];
             const images = {};
             let loaded = 0;
@@ -876,6 +896,7 @@
                     drawTile(`${species}LogTop`, tile * (start + 1));
                     drawTile(`${species}Leaves`, tile * (start + 2));
                 });
+                caveBlockTypes.forEach((type, index) => drawTile(type, tile * (caveTileStart + index)));
                 blockTexture.image = canvas2;
                 blockTexture.needsUpdate = true;
                 drawAllBlockIcons();
@@ -961,15 +982,15 @@
         const worldBottomY = -32;
         const chunkRadius = 12;
         const highDetailRadius = 80;
-        const waterLevel = 1.03;
+        const waterLevel = 1;
         const terrainChunks = new Map();
         const itemDefinitions = {
             grass: {label: 'Grass', color: '#45b83d'},
             dirt: {label: 'Dirt', color: '#765036'},
             sand: {label: 'Sand', color: '#d4bd7e'},
             snow: {label: 'Snow', color: '#e4f0f7'},
-            wood: {label: 'Wood', color: '#79522f'},
-            leaves: {label: 'Leaves', color: '#43863b'},
+            wood: {label: 'Oak Wood', color: '#79522f'},
+            leaves: {label: 'Oak Leaves', color: '#43863b'},
             stone: {label: 'Stone', color: '#777a79'},
             iron_ore: {label: 'Iron Ore', color: '#a87d66'},
             planks: {label: 'Oak Planks', color: '#b7834d'},
@@ -986,6 +1007,18 @@
             torch: {label: 'Torch', color: '#f3b44e'}
         };
         const placeableBlockTypes = new Set(['grass', 'dirt', 'sand', 'snow', 'wood', 'leaves', 'stone', 'iron_ore', 'planks', 'crafting_table', 'furnace']);
+        for (const type of caveBlockTypes) {
+            itemDefinitions[type] = {label: type.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase()), color: '#888888'};
+            placeableBlockTypes.add(type);
+        }
+        for (const species of treeSpecies) {
+            const label = species.replace(/_/g, ' ').replace(/\b\w/g, char => char.toUpperCase());
+            for (const part of ['wood', 'leaves']) {
+                const type = treeBlockType(species, part);
+                itemDefinitions[type] = {label: `${label} ${part === 'wood' ? 'Wood' : 'Leaves'}`, color: part === 'wood' ? '#79522f' : '#43863b'};
+                placeableBlockTypes.add(type);
+            }
+        }
         let sparkBlockPage = 0;
         const sparkBlocksPerPage = 48;
         const itemImageFileNames = {
@@ -1218,6 +1251,7 @@
         let currentTerrainChunkZ = null;
         let lastTerrainLodX = null;
         let lastTerrainLodZ = null;
+        let lastCaveView = false;
 
         function readSavedSlots(savedSlots, slotCount) {
             if (!Array.isArray(savedSlots) || savedSlots.length !== slotCount) return Array(slotCount).fill(null);
@@ -1362,12 +1396,15 @@
         function setAdminStatus(enabled) {
             isPlayerAdmin = enabled === true;
             document.getElementById('admin-creative-items').hidden = !isPlayerAdmin;
+            document.querySelector('[data-open-blocks]').hidden = !isPlayerAdmin;
             const button = document.getElementById('admin-flight');
             button.hidden = !isPlayerAdmin;
             document.getElementById('admin-open').hidden = !isPlayerAdmin;
+            document.getElementById('mobile-down').hidden = !isPlayerAdmin;
             if (!isPlayerAdmin) document.getElementById('admin-screen').hidden = true;
             if (!isPlayerAdmin) flying = false;
             button.textContent = `FLIGHT [F]: ${flying ? 'ON' : 'OFF'}`;
+            updateHotbar();
         }
 
         async function sendAccountProfile() {
@@ -1541,7 +1578,7 @@
                 slot.title = item ? `${index + 1}: ${item.label}` : `${index + 1}: Empty`;
                 slot.setAttribute('aria-pressed', String(index === selectedHotbarIndex));
                 slot.innerHTML = item
-                    ? `<span class="slot-number">${index + 1}</span><canvas class="item-icon" data-item-icon="${slotItem.type}" width="36" height="36"></canvas><span class="item-count">${slotItem.count}</span>`
+                    ? `<span class="slot-number">${index + 1}</span><canvas class="item-icon" data-item-icon="${slotItem.type}" width="36" height="36"></canvas><span class="item-count">${isPlayerAdmin && placeableBlockTypes.has(slotItem.type) ? '∞' : slotItem.count}</span>`
                     : `<span class="slot-number">${index + 1}</span>`;
                 slot.addEventListener('click', event => {
                     event.stopPropagation();
@@ -1664,6 +1701,15 @@
             leaves.attributes.uv.needsUpdate = true;
             return [species, {log, leaves}];
         }));
+        const caveGeometries = Object.fromEntries(caveBlockTypes.map((type, index) => {
+            const geometry = blockGeo.clone();
+            for (let face = 0; face < 6; face++) setFaceUV(geometry, face, caveTileStart + index);
+            geometry.attributes.uv.needsUpdate = true;
+            return [type, geometry];
+        }));
+        const glowMushroomMaterial = blockMat.clone();
+        glowMushroomMaterial.emissive.setHex(0x782219);
+        glowMushroomMaterial.emissiveIntensity = 0.7;
         const grassSideMaterial = blockMat.clone();
         grassSideMaterial.onBeforeCompile = shader => {
             shader.vertexShader = shader.vertexShader.replace(
@@ -1704,11 +1750,15 @@
             return sampleClimateColor(grassColorMap, column);
         }
         function foliageBiomeColor(column, species) {
-            return species === 'cherry' ? [1, 1, 1] : sampleClimateColor(foliageColorMap, column);
+            if (species === 'cherry') return [1, 1, 1];
+            const color = sampleClimateColor(foliageColorMap, column);
+            const frost = smoothstep(0.65, 1, column.snowWeight ?? 0);
+            return color.map((channel, index) => channel * (1 - frost) + [0.78, 0.9, 1][index] * frost);
         }
         const lowDetailSideTiles = {
             grass: 0, dirt: 3, sand: 6, snow: 11, wood: 8, leaves: 10,
-            stone: 12, iron_ore: 17, bedrock: 18, planks: 13, crafting_table: 14, furnace: 19
+            stone: 12, iron_ore: 17, bedrock: 18, planks: 13, crafting_table: 14, furnace: 19,
+            ...Object.fromEntries(caveBlockTypes.map((type, index) => [type, caveTileStart + index]))
         };
         const lowDetailMaterials = Object.fromEntries(Object.keys(lowDetailSideTiles).map(type => [
             type, new THREE.MeshStandardMaterial({roughness: 0.9, metalness: 0})
@@ -1775,8 +1825,7 @@
             return material;
         }
         updateLowDetailColors();
-        const waterGeo = new THREE.PlaneGeometry(1, 1);
-        waterGeo.rotateX(-Math.PI / 2);
+        const waterGeo = new THREE.BoxGeometry(1, 1, 1);
         const waterCanvas = document.createElement('canvas');
         waterCanvas.width = 32;
         waterCanvas.height = 32;
@@ -1830,14 +1879,18 @@
         }
 
         function addWaterInstances(targetGroup, cells) {
-            const visibleCells = cells.filter(([x, z]) => {
-                const placed = placedColumns.get(terrainColumnKey(x, z));
-                if (!placed) return true;
-                for (const y of placed.keys()) {
-                    if (y <= waterLevel && y + 1 >= waterLevel - 0.05) return false;
+            const visibleCells = [];
+            for (const [x, y, z, height = 1] of cells) {
+                if (height === 1) {
+                    if (!placedBlocks.has(blockKey(x, y, z))) visibleCells.push([x, y, z, 1]);
+                } else if (!placedBlocks.has(blockKey(x, y, z)) && !placedBlocks.has(blockKey(x, y + 1, z))) {
+                    visibleCells.push([x, y, z, height]);
+                } else {
+                    for (let dy = 0; dy < height; dy++) {
+                        if (!placedBlocks.has(blockKey(x, y + dy, z))) visibleCells.push([x, y + dy, z, 1]);
+                    }
                 }
-                return true;
-            });
+            }
             if (visibleCells.length === 0) return;
             const mesh = new THREE.InstancedMesh(waterGeo, waterMaterial, visibleCells.length);
             const matrix = new THREE.Matrix4();
@@ -1845,8 +1898,9 @@
             const position = new THREE.Vector3();
             const scale = new THREE.Vector3(1, 1, 1);
             for (let i = 0; i < visibleCells.length; i++) {
-                const [x, z] = visibleCells[i];
-                position.set(x + 0.5, waterLevel, z + 0.5);
+                const [x, y, z, height] = visibleCells[i];
+                position.set(x + 0.5, y + height / 2, z + 0.5);
+                scale.set(1, height, 1);
                 matrix.compose(position, rotation, scale);
                 mesh.setMatrixAt(i, matrix);
             }
@@ -1944,8 +1998,8 @@
             const warmWeight = smoothstep(0.58, 0.84, baseTemperature);
             const dryWeight = 1 - smoothstep(0.3, 0.7, moisture);
             const broadDesertWeight = warmWeight * dryWeight;
-            const rangeWarp = fbmNoise(worldX * 0.003 + 71.4, worldZ * 0.003 - 168.2) * 34;
-            const rangeCenter = Math.sin(worldX * 0.006) * 30 + Math.sin(worldX * 0.013 + 1.1) * 8;
+            const rangeWarp = fbmNoise(worldX * 0.003 + 71.4, worldZ * 0.003 - 168.2) * 48;
+            const rangeCenter = Math.sin(worldX * 0.006) * 46 + Math.sin(worldX * 0.013 + 1.1) * 16;
             const rangeOffset = worldZ + rangeWarp - rangeCenter;
             const rangeDistance = Math.abs(rangeOffset - Math.round(rangeOffset / 190) * 190);
             const rangeRegion = smoothstep(-0.12, 0.3, fbmNoise(worldX * 0.004 + 101.8, worldZ * 0.004 + 28.6));
@@ -1958,21 +2012,36 @@
             const grassWeight = Math.max(0, 1 - snowWeight - desertWeight);
             const terrainNoise = fbmNoise(worldX * 0.045, worldZ * 0.045);
             const rollingHills = fbmNoise(worldX * 0.014 - 48.3, worldZ * 0.014 + 72.6);
-            const baseHeight = Math.max(2, Math.round(4 + terrainNoise * 2.5 + rollingHills * 1.5));
-            const climateHeight = baseHeight * grassWeight + 3 * desertWeight + Math.max(baseHeight, 5) * snowWeight;
+            const hillRegion = smoothstep(-0.15, 0.12, fbmNoise(worldX * 0.004 + 211, worldZ * 0.004 - 337));
+            const hillShape = smoothstep(-0.3, 0.45, rollingHills);
+            const baseHeight = 4 + hillRegion * Math.max(0, 1 + hillShape * 12 + terrainNoise * 2);
+            const climateHeight = baseHeight * (1 - desertWeight * 0.15) + snowWeight;
             const humidRelief = (moisture - 0.5) * 1.2 * grassWeight;
             const riverField = sampleRiverField(worldX, worldZ);
             const riverNoise = Math.abs(riverField);
-            const riverWeight = (1 - smoothstep(0.024, 0.09, riverNoise)) * smoothstep(0.3, 0.58, moisture) * (1 - snowWeight) * (1 - mountainness * 0.7);
-            const terrainHeight = Math.max(1, Math.round(climateHeight + mountainRelief + humidRelief - riverWeight * 3));
+            const riverClimate = smoothstep(0.3, 0.58, moisture) * (1 - snowWeight) * (1 - mountainness * 0.7);
+            const riverWeight = (1 - smoothstep(0.024, 0.09, riverNoise)) * riverClimate;
+            const riverBankWeight = (1 - smoothstep(0.04, 0.4, riverNoise)) *
+                smoothstep(0.15, 0.35, moisture) * smoothstep(0.1, 0.25, baseTemperature);
+            const terrainHeight = Math.max(1, Math.round(lerp(climateHeight + mountainRelief + humidRelief, 1, riverBankWeight)));
             const isWater = riverWeight > 0.54 && mountainness < 0.45 && snowWeight < 0.6;
             const height = isWater ? -1 : terrainHeight;
+            const choiceValue = Math.sin(worldX * 127.1 + worldZ * 311.7 + roomSeeds[roomId]) * 43758.5453;
+            let choice = choiceValue - Math.floor(choiceValue);
+            let vegetationRegion = region;
+            for (const transition of climate.transitions) {
+                choice -= transition.weight;
+                if (choice < 0) { vegetationRegion = transition.region; break; }
+            }
             const biome = isWater ? 'river'
                 : mountainness > 0.52 ? 'mountain'
-                : region.name;
-            const surfaceType = biome === 'desert' ? 'sand' : 'grass';
-            const treeSpecies = biome === 'river' ? null : biome === 'mountain' ? 'spruce' : region.tree;
-            const treeDensity = biome === 'river' ? 0 : biome === 'mountain' ? 0.008 : region.density;
+                : climate.transitions.length ? 'transition' : region.name;
+            const surfaceType = vegetationRegion.name === 'desert' && biome !== 'mountain' ? 'sand' : 'grass';
+            const secondaryRoll = Math.sin(worldX * 51.3 + worldZ * 97.7) * 15731.743;
+            const regionTree = vegetationRegion.secondTree && secondaryRoll - Math.floor(secondaryRoll) < 0.5
+                ? vegetationRegion.secondTree : vegetationRegion.tree;
+            const treeSpecies = biome === 'river' ? null : biome === 'mountain' ? 'spruce' : regionTree;
+            const treeDensity = biome === 'river' ? 0 : biome === 'mountain' ? 0.008 : vegetationRegion.density;
             const grassRed = 0.36 - moisture * 0.05;
             const grassGreen = 0.52 + moisture * 0.16;
             const grassBlue = 0.18 + moisture * 0.04;
@@ -2002,6 +2071,24 @@
             return activeWaterCells.has(terrainColumnKey(cellX, cellZ)) || sampleTerrainColumn(cellX, cellZ).isWater;
         }
 
+        function caveProfileAt(x, z) {
+            return PixameCaves.sample(x, z, roomSeeds[roomId], PixameBiomes.sampleClimate(x, z, roomSeeds[roomId]));
+        }
+
+        function isCaveAir(x, y, z) {
+            return y > worldBottomY && y < -4 && PixameCaves.contains(caveProfileAt(x, z), y);
+        }
+
+        function waterSurfaceAt(worldX, feetY, worldZ) {
+            const x = Math.floor(worldX), z = Math.floor(worldZ);
+            if (feetY >= -1 && feetY < waterLevel && isWaterAt(worldX, worldZ) &&
+                !placedBlocks.has(blockKey(x, Math.floor(feetY), z))) return waterLevel;
+            if (feetY <= worldBottomY) return null;
+            const cave = caveProfileAt(x, z);
+            return cave?.water && feetY >= cave.floor && feetY < cave.floor + 1 &&
+                !placedBlocks.has(blockKey(x, cave.floor, z)) ? cave.floor + 1 : null;
+        }
+
         function undergroundBlockType(x, y, z) {
             if (y === worldBottomY) return 'bedrock';
             const veinX = Math.floor(x / 2);
@@ -2016,7 +2103,7 @@
             blocksByType.get(type).push(block);
         }
 
-        function buildTerrainChunk(chunkX, chunkZ, lod) {
+        function buildTerrainChunk(chunkX, chunkZ, lod, caveDetail = false) {
             const chunkGroup = new THREE.Group();
             const highGrass = [];
             const highDirt = [];
@@ -2030,6 +2117,7 @@
             const highCraftingTables = [];
             const highFurnaces = [];
             const highLeaves = [];
+            const highCaveBlocks = new Map();
             const treeBlocks = new Map();
             const highSparkBlocks = new Map();
             const highSparkModelBlocks = [];
@@ -2038,6 +2126,7 @@
             const lowSparkBlocks = new Map();
             const waterCells = [];
             const waterBed = [];
+            const caveWaterCells = [];
             const treeKeys = [];
             const startX = chunkX * chunkSize;
             const startZ = chunkZ * chunkSize;
@@ -2052,11 +2141,54 @@
                             by < worldBottomY || by >= 0) continue;
                         const neighborKey = blockKey(bx, by, bz);
                         if (exposed.has(neighborKey) || placedBlocks.has(neighborKey) ||
-                            (by > worldBottomY && removedBlocks.has(neighborKey))) continue;
+                            (by > worldBottomY && removedBlocks.has(neighborKey)) || isCaveAir(bx, by, bz)) continue;
                         if (isWaterAt(bx + 0.5, bz + 0.5) && by >= -3) continue;
                         exposed.add(neighborKey);
                         const type = undergroundBlockType(bx, by, bz);
                         (type === 'bedrock' ? highBedrock : type === 'iron_ore' ? highIronOre : highStone).push([bx, by, bz]);
+                    }
+                }
+                if (caveDetail) {
+                    const profiles = new Map();
+                    const profileAt = (x, z) => {
+                        const key = `${x},${z}`;
+                        if (!profiles.has(key)) profiles.set(key, caveProfileAt(x, z));
+                        return profiles.get(key);
+                    };
+                    const inside = (x, y, z) => y > worldBottomY && y < -4 && PixameCaves.contains(profileAt(x, z), y);
+                    for (let x = startX - 1; x <= startX + chunkSize; x++) {
+                        for (let z = startZ - 1; z <= startZ + chunkSize; z++) {
+                            const cave = profileAt(x, z);
+                            if (!cave) continue;
+                            const ownColumn = x >= startX && x < startX + chunkSize && z >= startZ && z < startZ + chunkSize;
+                            if (ownColumn && cave.water) caveWaterCells.push([x, cave.floor, z]);
+                            if (ownColumn && cave.biome === 'fungal' && !cave.water &&
+                                Math.abs(Math.sin(x * 91.7 + z * 173.3)) > 0.995 && cave.floor + 1 <= cave.ceiling) {
+                                for (const [y, type] of [[cave.floor, 'mushroom_stem'], [cave.floor + 1, 'glow_mushroom']]) {
+                                    const key = blockKey(x, y, z);
+                                    if (removedBlocks.has(key) || placedBlocks.has(key)) continue;
+                                    treeKeys.push(key);
+                                    addGroupedBlock(highCaveBlocks, type, [x, y, z]);
+                                }
+                            }
+                            for (let y = cave.floor; y <= cave.ceiling; y++) {
+                                for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+                                    const bx = x + dx, by = y + dy, bz = z + dz;
+                                    if (bx < startX || bx >= startX + chunkSize || bz < startZ || bz >= startZ + chunkSize ||
+                                        by < worldBottomY || by >= 0 || inside(bx, by, bz)) continue;
+                                    const key = blockKey(bx, by, bz);
+                                    if (exposed.has(key) || placedBlocks.has(key) || (by > worldBottomY && removedBlocks.has(key))) continue;
+                                    exposed.add(key);
+                                    if (by === worldBottomY) highBedrock.push([bx, by, bz]);
+                                    else if (cave.biome === 'fungal') {
+                                        const type = undergroundBlockType(bx, by, bz);
+                                        (type === 'iron_ore' ? highIronOre : highStone).push([bx, by, bz]);
+                                    } else {
+                                        addGroupedBlock(highCaveBlocks, cave.biome === 'ice' ? 'packed_ice' : 'moss_block', [bx, by, bz]);
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -2107,7 +2239,7 @@
                     const height = column.height;
                     const isWater = filled.has(cellKey(x, z));
                     if (isWater) {
-                        waterCells.push([x, z]);
+                        waterCells.push([x, -1, z, 2]);
                         waterKeys.push(cellKey(x, z));
                         if (!removedBlocks.has(blockKey(x, -3, z))) waterBed.push([x, -3, z]);
                         if (!removedBlocks.has(blockKey(x, -2, z))) waterBed.push([x, -2, z]);
@@ -2141,14 +2273,16 @@
                     if (!column.treeSpecies || treeRoll >= column.treeDensity || x < startX + 2 || x >= startX + chunkSize - 2 || z < startZ + 2 || z >= startZ + chunkSize - 2) continue;
 
                     const heightValue = Math.sin(x * 269.5 + z * 183.3) * 15731.743;
-                    const variation = Math.floor((heightValue - Math.floor(heightValue)) * 2);
+                    const variation = Math.floor((heightValue - Math.floor(heightValue)) * 3);
                     const species = column.treeSpecies;
-                    const trunkHeight = (species === 'spruce' || species === 'jungle' ? 5 : 3) + variation;
+                    const trunkHeight = (species === 'jungle' ? 7 : species === 'spruce' || species === 'birch' ? 5 : 4) + variation;
                     const treeBaseY = height;
                     if (!treeBlocks.has(species)) treeBlocks.set(species, {wood: [], leaves: []});
+                    const thisTree = new Set();
                     const addTreeBlock = (treeX, treeY, treeZ, type) => {
                         const key = blockKey(treeX, treeY, treeZ);
-                        if (removedBlocks.has(key) || placedBlocks.has(key)) return;
+                        if (thisTree.has(key) || removedBlocks.has(key) || placedBlocks.has(key)) return;
+                        thisTree.add(key);
                         treeKeys.push(key);
                         treeBlocks.get(species)[type].push(type === 'leaves'
                             ? [treeX, treeY, treeZ, 1, ...foliageBiomeColor(column, species)]
@@ -2156,6 +2290,16 @@
                     };
                     for (let y = treeBaseY; y < treeBaseY + trunkHeight; y++) {
                         addTreeBlock(x, y, z, 'wood');
+                    }
+                    const branchCount = species === 'spruce' ? 2 : 3 + variation % 2;
+                    const directions = [[1, 0], [0, 1], [-1, 0], [0, -1]];
+                    const directionOffset = Math.floor((heightValue - Math.floor(heightValue)) * 4);
+                    for (let i = 0; i < branchCount; i++) {
+                        const [dx, dz] = directions[(i + directionOffset) % directions.length];
+                        const branchY = treeBaseY + trunkHeight - 2 - (i % 2);
+                        addTreeBlock(x + dx, branchY, z + dz, 'wood');
+                        addTreeBlock(x + dx * 2, branchY + (i % 2), z + dz * 2, 'wood');
+                        addTreeBlock(x + dx * 2, branchY + 1 + (i % 2), z + dz * 2, 'leaves');
                     }
                     const canopyLayers = species === 'spruce' ? [
                         {offset: -3, radius: 2}, {offset: -2, radius: 1}, {offset: -1, radius: 2},
@@ -2186,7 +2330,16 @@
                     const placed = placedColumns.get(terrainColumnKey(x, z));
                     if (!placed) continue;
                     for (const [y, type] of placed) {
-                        if (sparkBlockDefinitions.has(type)) {
+                        const treeKind = treeSpecies.find(species => type === treeBlockType(species, 'wood') || type === treeBlockType(species, 'leaves'));
+                        if (caveBlockTypes.includes(type)) {
+                            const grouped = lod === 'high' ? highCaveBlocks : lowPlacedBlocks;
+                            addGroupedBlock(grouped, type, [x, y, z]);
+                        } else if (treeKind) {
+                            const part = type === treeBlockType(treeKind, 'wood') ? 'wood' : 'leaves';
+                            if (!treeBlocks.has(treeKind)) treeBlocks.set(treeKind, {wood: [], leaves: []});
+                            treeBlocks.get(treeKind)[part].push(part === 'leaves'
+                                ? [x, y, z, 1, ...foliageBiomeColor(columnAt(x, z), treeKind)] : [x, y, z]);
+                        } else if (sparkBlockDefinitions.has(type)) {
                             const model = lod === 'high' && getSparkModel(type);
                             if (model) {
                                 highSparkModelBlocks.push([x, y, z, type, model]);
@@ -2228,6 +2381,9 @@
                 for (const [type, blocks] of highSparkBlocks) {
                     addBlockInstances(chunkGroup, blocks, blockGeo, getSparkBlockMaterial(type), type);
                 }
+                for (const [type, blocks] of highCaveBlocks) {
+                    addBlockInstances(chunkGroup, blocks, caveGeometries[type], type === 'glow_mushroom' ? glowMushroomMaterial : blockMat, type);
+                }
             } else {
                 for (const blocksByType of [lowTerrainBlocks, lowPlacedBlocks]) {
                     for (const [type, blocks] of blocksByType) {
@@ -2245,8 +2401,8 @@
                 const leafGeometry = lod === 'low' ? blockGeo : geometry ? geometry.leaves : leavesGeo;
                 const logMaterial = lod === 'low' ? (lowTreeMaterials[species]?.wood || lowDetailMaterials.wood) : blockMat;
                 const leafMaterial = lod === 'low' ? (lowTreeMaterials[species]?.leaves || lowDetailMaterials.leaves) : leavesMaterial;
-                addBlockInstances(chunkGroup, blocks.wood, logGeometry, logMaterial, 'wood');
-                const leaves = addBlockInstances(chunkGroup, blocks.leaves, leafGeometry, leafMaterial, 'leaves');
+                addBlockInstances(chunkGroup, blocks.wood, logGeometry, logMaterial, treeBlockType(species, 'wood'));
+                const leaves = addBlockInstances(chunkGroup, blocks.leaves, leafGeometry, leafMaterial, treeBlockType(species, 'leaves'));
                 if (leaves) leaves.userData.foliageSpecies = species;
             }
             for (const [x, y, z, type, model] of highSparkModelBlocks) {
@@ -2254,7 +2410,8 @@
             }
             addBlockInstances(chunkGroup, waterBed, lod === 'low' ? blockGeo : sandGeo, lod === 'low' ? lowDetailMaterials.sand : blockMat, 'sand');
             addWaterInstances(chunkGroup, waterCells);
-            return {group: chunkGroup, lod, chunkX, chunkZ, waterKeys, treeKeys};
+            addWaterInstances(chunkGroup, caveWaterCells);
+            return {group: chunkGroup, lod, chunkX, chunkZ, waterKeys, treeKeys, caveDetail};
         }
 
         function updateTerrainChunks() {
@@ -2263,7 +2420,13 @@
             const movedX = lastTerrainLodX === null ? Infinity : camera.position.x - lastTerrainLodX;
             const movedZ = lastTerrainLodZ === null ? Infinity : camera.position.z - lastTerrainLodZ;
             const crossedChunk = playerChunkX !== currentTerrainChunkX || playerChunkZ !== currentTerrainChunkZ;
-            if (!crossedChunk && movedX * movedX + movedZ * movedZ < 16) return;
+            const caveView = camera.position.y < 0;
+            if (!crossedChunk && caveView === lastCaveView && movedX * movedX + movedZ * movedZ < 16) return;
+            if (caveView !== lastCaveView) {
+                scene.fog = caveView ? new THREE.Fog(0x1b2533, 24, 55) : null;
+                scene.background.setHex(caveView ? 0x1b2533 : 0x87ceeb);
+            }
+            lastCaveView = caveView;
             currentTerrainChunkX = playerChunkX;
             currentTerrainChunkZ = playerChunkZ;
             lastTerrainLodX = camera.position.x;
@@ -2280,15 +2443,17 @@
                     const closestZ = Math.max(minZ, Math.min(camera.position.z, minZ + chunkSize));
                     const distance = Math.hypot(closestX - camera.position.x, closestZ - camera.position.z);
                     const lod = distance <= highDetailRadius ? 'high' : 'low';
+                    const caveDetail = lod === 'high' && caveView &&
+                        Math.abs(chunkX - playerChunkX) <= 2 && Math.abs(chunkZ - playerChunkZ) <= 2;
                     const existing = terrainChunks.get(key);
-                    if (existing && existing.lod === lod) continue;
+                    if (existing && existing.lod === lod && existing.caveDetail === caveDetail) continue;
                     if (existing) {
                         floorGroup.remove(existing.group);
                         disposeSparkModelGeometries(existing.group);
                         for (const waterKey of existing.waterKeys) activeWaterCells.delete(waterKey);
                         for (const treeKey of existing.treeKeys) activeTreeBlocks.delete(treeKey);
                     }
-                    const chunk = buildTerrainChunk(chunkX, chunkZ, lod);
+                    const chunk = buildTerrainChunk(chunkX, chunkZ, lod, caveDetail);
                     floorGroup.add(chunk.group);
                     for (const waterKey of chunk.waterKeys) activeWaterCells.add(waterKey);
                     for (const treeKey of chunk.treeKeys) activeTreeBlocks.add(treeKey);
@@ -2309,12 +2474,8 @@
 
         scene.add(floorGroup);
 
-        let playerModelMixer = null;
         let playerAvatar = null;
-        const playerAnimationActions = new Map();
-        let activePlayerAnimation = null;
-        const avatarFacingOffset = Math.PI * 1.5;
-        const avatarTargetHeight = 2;
+        let avatarFactory = null;
 
         updateTerrainChunks();
 
@@ -2393,81 +2554,20 @@
         foliageColorMapImage.onerror = error => console.error('Failed to load foliage colormap:', error);
         foliageColorMapImage.src = '/assets/textures/colormap/foliage.png';
 
-        function playPlayerAnimation(animationName) {
-            if (!playerModelMixer || activePlayerAnimation === animationName) return;
-            const nextAction = playerAnimationActions.get(animationName);
-            if (!nextAction) return;
-            if (activePlayerAnimation) {
-                const previousAction = playerAnimationActions.get(activePlayerAnimation);
-                if (previousAction) previousAction.fadeOut(0.14);
-            }
-            nextAction.reset().fadeIn(0.14).play();
-            activePlayerAnimation = animationName;
-        }
-
-        function updatePlayerAnimation(isMoving, isMining, isSprinting) {
-            if (!playerModelMixer) return;
-            if (isMining && playerAnimationActions.has('break')) {
-                playPlayerAnimation('break');
-            } else if (isMoving && isSprinting && playerAnimationActions.has('run')) {
-                playPlayerAnimation('run');
-            } else if (isMoving && playerAnimationActions.has('walk')) {
-                playPlayerAnimation('walk');
-            } else {
-                playPlayerAnimation('idle');
-            }
-        }
-
-        if (typeof THREE.GLTFLoader !== 'undefined') {
-            try {
-                const gltfLoader = new THREE.GLTFLoader();
-                gltfLoader.load('player_model.glb', gltf => {
-                    const model = gltf.scene;
-                    console.log('Player model loaded:', model);
-                    model.traverse(n => { if (n.isMesh) { n.castShadow = true; n.receiveShadow = true; } });
-                    // compute bounding box and auto-scale to a reasonable player/scene height
-                    try {
-                        const bbox = new THREE.Box3().setFromObject(model);
-                        const size = new THREE.Vector3();
-                        bbox.getSize(size);
-                        console.log('model bbox size:', size);
-                        if (size.y > 0) {
-                            const uniformScale = avatarTargetHeight / size.y;
-                            model.scale.multiplyScalar(uniformScale);
-                            console.log('Auto-scaled model by', uniformScale);
-                        } else {
-                            model.scale.set(0.01, 0.01, 0.01);
-                            console.log('Fallback scale applied');
-                        }
-                    } catch (e) {
-                        console.warn('Error computing bbox or scaling model', e);
-                    }
-                    if (gltf.animations.length > 0) {
-                        playerModelMixer = new THREE.AnimationMixer(model);
-                        for (const clip of gltf.animations) {
-                            // The exported idle/break clips move the root bone upward while leaving the legs behind.
-                            clip.tracks = clip.tracks.filter(track => track.name !== 'bone_1.position');
-                            const normalizedName = clip.name.toLowerCase();
-                            const animationName = normalizedName.includes('idle') ? 'idle'
-                                : normalizedName.includes('walk') ? 'walk'
-                                : normalizedName.includes('run') ? 'run'
-                                : normalizedName.includes('break') || normalizedName.includes('mine') ? 'break'
-                                : normalizedName;
-                            playerAnimationActions.set(animationName, playerModelMixer.clipAction(clip));
-                        }
-                        playPlayerAnimation(playerAnimationActions.has('idle') ? 'idle' : playerAnimationActions.keys().next().value);
-                    } else {
-                        console.warn('Player model contains no animation clips.');
-                    }
-                    playerAvatar = model;
-                    scene.add(model);
-                }, undefined, err => {
-                    console.warn('Failed to load player_model.glb', err);
-                });
-            } catch (e) {
-                console.warn('GLTF loader not available or failed to initialize', e);
-            }
-        }
+        Promise.all([
+            fetch('/player.json').then(response => {
+                if (!response.ok) throw new Error(`Player model request failed: ${response.status}`);
+                return response.json();
+            }),
+            new Promise((resolve, reject) => new THREE.TextureLoader().load('/player_texture.png', resolve, undefined, reject))
+        ]).then(([model, texture]) => {
+            avatarFactory = createPlayerAvatarFactory(THREE, model, texture);
+            playerAvatar = avatarFactory.create();
+            scene.add(playerAvatar.root);
+        }).catch(error => {
+            console.error('Failed to load player model or skin:', error);
+            roomMessage.textContent = 'Failed to load player model or skin.';
+        });
 
         const floorTop = 1.0;
         const playerEyeHeight = 1.8;
@@ -2583,7 +2683,7 @@
             if (placedBlocks.has(key)) return true;
             if (removedBlocks.has(key)) return false;
             if (activeTreeBlocks.has(key)) return true;
-            if (y < -3 && y > worldBottomY) return true;
+            if (y < -3 && y > worldBottomY) return !isCaveAir(x, y, z);
             if (isWaterAt(x + 0.5, z + 0.5)) return y === -3 || y === -2;
             const height = sampleTerrainColumn(x, z).height;
             return y > worldBottomY && y < height;
@@ -2605,7 +2705,7 @@
             disposeSparkModelGeometries(existing.group);
             for (const waterKey of existing.waterKeys) activeWaterCells.delete(waterKey);
             for (const treeKey of existing.treeKeys) activeTreeBlocks.delete(treeKey);
-            const chunk = buildTerrainChunk(chunkX, chunkZ, existing.lod);
+            const chunk = buildTerrainChunk(chunkX, chunkZ, existing.lod, existing.caveDetail);
             floorGroup.add(chunk.group);
             for (const waterKey of chunk.waterKeys) activeWaterCells.add(waterKey);
             for (const treeKey of chunk.treeKeys) activeTreeBlocks.add(treeKey);
@@ -2731,11 +2831,14 @@
             const selectedType = hotbarItems[selectedHotbarIndex]?.type;
             const isAxe = selectedType === 'wooden_axe' || selectedType === 'stone_axe';
             const isPickaxe = selectedType === 'wooden_pickaxe' || selectedType === 'stone_pickaxe';
-            const correctTool = (targetType === 'wood' || targetType === 'leaves') && isAxe
+            const treePart = targetType === 'wood' || targetType === 'leaves' ||
+                treeSpecies.some(species => targetType === treeBlockType(species, 'wood') || targetType === treeBlockType(species, 'leaves'));
+            const baseDuration = miningDurations[targetType] || (treePart ? targetType.endsWith('leaves') ? 0.2 : 0.8 : 0.5);
+            const correctTool = treePart && isAxe
                 || (targetType === 'stone' || targetType === 'iron_ore' || targetType === 'furnace') && isPickaxe;
-            if (!correctTool) return miningDurations[targetType] || 0.5;
+            if (!correctTool) return baseDuration;
             const multiplier = selectedType.startsWith('stone_') ? 0.3 : 0.5;
-            return (miningDurations[targetType] || 0.5) * multiplier;
+            return baseDuration * multiplier;
         }
 
         function showItemNotification() {
@@ -2758,6 +2861,8 @@
         }
 
         function setBlockPaletteOpen(isOpen) {
+            if (isOpen && !isPlayerAdmin) return;
+            if (isOpen) resetMobileInput();
             if (isOpen && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
             blockPalette.hidden = !isOpen;
             inventoryToggle.setAttribute('aria-expanded', String(isOpen));
@@ -2773,6 +2878,10 @@
         const craftingGrid = Array(9).fill(null);
         const craftingRecipes = [
             {id: 'planks', label: 'Oak Planks', ingredients: {wood: 1}, output: {type: 'planks', count: 4}, pattern: ['wood']},
+            ...treeSpecies.map(species => {
+                const wood = treeBlockType(species, 'wood');
+                return {id: `${species}_planks`, label: 'Planks', ingredients: {[wood]: 1}, output: {type: 'planks', count: 4}, pattern: [wood]};
+            }),
             {id: 'sticks', label: 'Sticks', ingredients: {planks: 2}, output: {type: 'sticks', count: 4}, pattern: ['planks', 'planks']},
             {id: 'crafting_table', label: 'Crafting Table', ingredients: {planks: 4}, output: {type: 'crafting_table', count: 1}, pattern: ['planks', 'planks', 'planks', 'planks']},
             {id: 'furnace', label: 'Furnace', ingredients: {stone: 8}, output: {type: 'furnace', count: 1}, pattern: ['stone', 'stone', 'stone', 'stone', null, 'stone', 'stone', 'stone', 'stone']},
@@ -2782,7 +2891,11 @@
             {id: 'stone_axe', label: 'Stone Axe', ingredients: {stone: 3, sticks: 2}, output: {type: 'stone_axe', count: 1}, pattern: ['stone', 'stone', 'stone', 'sticks', null, 'sticks']},
             {id: 'wooden_sword', label: 'Wooden Sword', ingredients: {planks: 2, sticks: 1}, output: {type: 'wooden_sword', count: 1}, pattern: ['planks', 'planks', 'sticks']},
             {id: 'stone_sword', label: 'Stone Sword', ingredients: {stone: 2, sticks: 1}, output: {type: 'stone_sword', count: 1}, pattern: ['stone', 'stone', 'sticks']},
-            {id: 'torch', label: 'Torches', ingredients: {wood: 1, sticks: 1}, output: {type: 'torch', count: 4}, pattern: ['wood', 'sticks']}
+            {id: 'torch', label: 'Torches', ingredients: {wood: 1, sticks: 1}, output: {type: 'torch', count: 4}, pattern: ['wood', 'sticks']},
+            ...treeSpecies.map(species => {
+                const wood = treeBlockType(species, 'wood');
+                return {id: `${species}_torch`, label: 'Torches', ingredients: {[wood]: 1, sticks: 1}, output: {type: 'torch', count: 4}, pattern: [wood, 'sticks']};
+            })
         ];
         let activePalettePage = 'blocks';
 
@@ -2907,9 +3020,11 @@
 
         const personalCraftingRecipes = [
             {pattern: ['wood'], output: {type: 'planks', count: 4}},
+            ...treeSpecies.map(species => ({pattern: [treeBlockType(species, 'wood')], output: {type: 'planks', count: 4}})),
             {pattern: ['planks', 'planks'], output: {type: 'sticks', count: 4}},
             {pattern: ['planks', 'planks', 'planks', 'planks'], output: {type: 'crafting_table', count: 1}},
-            {pattern: ['wood', 'sticks'], output: {type: 'torch', count: 4}}
+            {pattern: ['wood', 'sticks'], output: {type: 'torch', count: 4}},
+            ...treeSpecies.map(species => ({pattern: [treeBlockType(species, 'wood'), 'sticks'], output: {type: 'torch', count: 4}}))
         ];
 
         function getInventoryContainer(name) {
@@ -2921,12 +3036,33 @@
         }
 
         let inventoryDrag = null;
+        let mobileInventorySource = null;
 
         function clearInventoryDrag() {
             inventoryDrag = null;
             document.querySelectorAll('.inventory-slot.dragging, .inventory-slot.drag-over').forEach(slot => {
                 slot.classList.remove('dragging', 'drag-over');
             });
+        }
+
+        function moveInventoryStack(drag, containerName, index) {
+            const source = getInventoryContainer(drag.containerName);
+            const destinationContainer = getInventoryContainer(containerName);
+            if (source[drag.index] !== drag.stack || source === destinationContainer && drag.index === index) return;
+            const destination = destinationContainer[index];
+            if (destination && destination.type === drag.stack.type) {
+                const moved = Math.min(drag.stack.count, 99 - destination.count);
+                if (!moved) return;
+                destination.count += moved;
+                drag.stack.count -= moved;
+                if (drag.stack.count === 0) source[drag.index] = null;
+            } else {
+                source[drag.index] = destination;
+                destinationContainer[index] = drag.stack;
+            }
+            selectedInventoryItem = {container: containerName, index};
+            if (containerName === 'hotbar') selectedHotbarIndex = index;
+            updateHotbar();
         }
 
         function normalizedPersonalCraftingGrid() {
@@ -2960,10 +3096,20 @@
                 if (stack) {
                     slot.innerHTML = '<canvas class="item-icon" width="36" height="36"></canvas><span class="item-count"></span>';
                     drawItemIcon(slot.querySelector('.item-icon'), stack.type);
-                    slot.querySelector('.item-count').textContent = stack.count;
+                    slot.querySelector('.item-count').textContent = isPlayerAdmin && placeableBlockTypes.has(stack.type) ? '∞' : stack.count;
                 }
                 slot.addEventListener('click', () => {
                     if (furnacePending || furnaceSaveUncertain) return;
+                    if (mobileMode && mobileInventorySource) {
+                        const source = mobileInventorySource;
+                        mobileInventorySource = null;
+                        if (source.containerName !== containerName || source.index !== index) {
+                            moveInventoryStack(source, containerName, index);
+                            return;
+                        }
+                    } else if (mobileMode && stack) {
+                        mobileInventorySource = {containerName, index, stack};
+                    }
                     selectedInventoryItem = {container: containerName, index};
                     if (containerName === 'hotbar') selectedHotbarIndex = index;
                     refreshPlayerInventoryUI();
@@ -2994,22 +3140,7 @@
                     const drag = inventoryDrag;
                     clearInventoryDrag();
                     if (!drag || furnacePending || furnaceSaveUncertain) return;
-                    const source = getInventoryContainer(drag.containerName);
-                    if (source[drag.index] !== drag.stack || source === container && drag.index === index) return;
-                    const destination = container[index];
-                    if (destination && destination.type === drag.stack.type) {
-                        const moved = Math.min(drag.stack.count, 99 - destination.count);
-                        if (!moved) return;
-                        destination.count += moved;
-                        drag.stack.count -= moved;
-                        if (drag.stack.count === 0) source[drag.index] = null;
-                    } else {
-                        source[drag.index] = destination;
-                        container[index] = drag.stack;
-                    }
-                    selectedInventoryItem = {container: containerName, index};
-                    if (containerName === 'hotbar') selectedHotbarIndex = index;
-                    updateHotbar();
+                    moveInventoryStack(drag, containerName, index);
                 });
                 slot.addEventListener('dragend', clearInventoryDrag);
                 target.appendChild(slot);
@@ -3029,7 +3160,15 @@
                     drawItemIcon(cell.querySelector('.item-icon'), type);
                 }
                 cell.addEventListener('click', () => {
-                    if (personalCraftingGrid[index]) return;
+                    mobileInventorySource = null;
+                    if (personalCraftingGrid[index]) {
+                        if (mobileMode && canStoreItems(personalCraftingGrid[index], 1)) {
+                            storeItems(personalCraftingGrid[index], 1);
+                            personalCraftingGrid[index] = null;
+                            updateHotbar();
+                        }
+                        return;
+                    }
                     const stack = getSelectedInventoryStack();
                     if (!stack || stack.count < 1) return;
                     personalCraftingGrid[index] = stack.type;
@@ -3070,6 +3209,8 @@
         });
 
         function setPlayerInventoryOpen(isOpen) {
+            mobileInventorySource = null;
+            if (isOpen) resetMobileInput();
             if (isOpen && furnaceOpen) setFurnaceOpen(false);
             if (isOpen && workbenchOpen) setWorkbenchOpen(false);
             if (isOpen && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
@@ -3094,7 +3235,15 @@
                     drawItemIcon(cell.querySelector('.item-icon'), type);
                 }
                 cell.addEventListener('click', () => {
-                    if (craftingGrid[index]) return;
+                    mobileInventorySource = null;
+                    if (craftingGrid[index]) {
+                        if (mobileMode && canStoreItems(craftingGrid[index], 1)) {
+                            storeItems(craftingGrid[index], 1);
+                            craftingGrid[index] = null;
+                            updateHotbar();
+                        }
+                        return;
+                    }
                     const selected = getSelectedInventoryStack();
                     if (!selected || selected.count < 1) return;
                     craftingGrid[index] = selected.type;
@@ -3130,6 +3279,8 @@
         workbenchOutput.addEventListener('click', () => collectManualCraft(getManualRecipe()));
 
         function setWorkbenchOpen(isOpen) {
+            mobileInventorySource = null;
+            if (isOpen) resetMobileInput();
             if (isOpen && furnaceOpen) setFurnaceOpen(false);
             if (isOpen && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
             workbenchScreen.hidden = !isOpen;
@@ -3250,6 +3401,8 @@
 
         function setFurnaceOpen(isOpen, position = null) {
             if (furnacePending || furnaceSaveUncertain) return;
+            mobileInventorySource = null;
+            if (isOpen) resetMobileInput();
             if (isOpen && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
             furnaceScreen.hidden = !isOpen;
             furnaceOpen = isOpen;
@@ -3275,7 +3428,10 @@
         }
 
         for (const [name, element] of Object.entries(furnaceSlotElements)) {
-            element.addEventListener('click', () => requestFurnace(name === 'output' ? 'take' : 'insert', name));
+            element.addEventListener('click', () => {
+                mobileInventorySource = null;
+                requestFurnace(name === 'output' || mobileMode && furnaceState?.[name] ? 'take' : 'insert', name);
+            });
             element.addEventListener('contextmenu', event => {
                 event.preventDefault();
                 requestFurnace('take', name);
@@ -3284,6 +3440,7 @@
         document.querySelector('[data-close-furnace]').addEventListener('click', () => setFurnaceOpen(false));
 
         function addPaletteBlock(type) {
+            if (!isPlayerAdmin || !placeableBlockTypes.has(type)) return;
             const existingIndex = hotbarItems.findIndex(slot => slot?.type === type && slot.count < 99);
             const emptyIndex = hotbarItems.findIndex(slot => slot === null);
             const slotIndex = existingIndex >= 0 ? existingIndex : emptyIndex;
@@ -3294,36 +3451,37 @@
                 hotbarItems[slotIndex] = {type, count: 64};
             }
 
-            const adminItemSelect = document.getElementById('admin-item-select');
-            const adminItemMessage = document.getElementById('admin-item-message');
-            adminItemSelect.addEventListener('focus', () => {
-                const previous = adminItemSelect.value;
-                adminItemSelect.replaceChildren();
-                for (const [type, definition] of Object.entries(itemDefinitions)) {
-                    adminItemSelect.add(new Option(definition.label, type));
-                }
-                if (itemDefinitions[previous]) adminItemSelect.value = previous;
-            });
-            document.getElementById('admin-item-add').addEventListener('click', () => {
-                if (!isPlayerAdmin) return;
-                const type = adminItemSelect.value;
-                if (!itemDefinitions[type]) {
-                    adminItemMessage.textContent = 'Select an item.';
-                    return;
-                }
-                if (!canStoreItems(type, 64)) {
-                    adminItemMessage.textContent = 'Not enough inventory space.';
-                    return;
-                }
-                storeItems(type, 64);
-                updateHotbar();
-                adminItemMessage.textContent = '';
-            });
             selectedHotbarIndex = slotIndex;
             updateHotbar();
             showItemNotification();
             setBlockPaletteOpen(false);
         }
+
+        const adminItemSelect = document.getElementById('admin-item-select');
+        const adminItemMessage = document.getElementById('admin-item-message');
+        adminItemSelect.addEventListener('focus', () => {
+            const previous = adminItemSelect.value;
+            adminItemSelect.replaceChildren();
+            for (const [type, definition] of Object.entries(itemDefinitions)) {
+                adminItemSelect.add(new Option(definition.label, type));
+            }
+            if (itemDefinitions[previous]) adminItemSelect.value = previous;
+        });
+        document.getElementById('admin-item-add').addEventListener('click', () => {
+            if (!isPlayerAdmin) return;
+            const type = adminItemSelect.value;
+            if (!itemDefinitions[type]) {
+                adminItemMessage.textContent = 'Select an item.';
+                return;
+            }
+            if (!canStoreItems(type, 64)) {
+                adminItemMessage.textContent = 'Not enough inventory space.';
+                return;
+            }
+            storeItems(type, 64);
+            updateHotbar();
+            adminItemMessage.textContent = '';
+        });
 
         inventoryToggle.addEventListener('click', () => {
             setPlayerInventoryOpen(playerInventory.hidden);
@@ -3596,81 +3754,26 @@
         });
         const otherPlayers = {};
 
-        function playRemotePlayerAnimation(remotePlayer, animationName) {
-            if (remotePlayer.activeAnimation === animationName) return;
-            const nextAction = remotePlayer.actions.get(animationName);
-            if (!nextAction) return;
-            const previousAction = remotePlayer.actions.get(remotePlayer.activeAnimation);
-            if (previousAction) previousAction.fadeOut(0.14);
-            nextAction.reset().fadeIn(0.14).play();
-            remotePlayer.activeAnimation = animationName;
-        }
-
         function loadRemotePlayer(id) {
-            otherPlayers[id] = { loading: true };
-            const gltfLoader = new THREE.GLTFLoader();
-            gltfLoader.load('player_model.glb', gltf => {
-                const remotePlayer = otherPlayers[id];
-                if (!remotePlayer) return;
-
-                const avatar = gltf.scene;
-                avatar.traverse(node => {
-                    if (node.isMesh) {
-                        node.castShadow = true;
-                        node.receiveShadow = true;
-                    }
-                });
-
-                const bounds = new THREE.Box3().setFromObject(avatar);
-                const size = new THREE.Vector3();
-                bounds.getSize(size);
-                if (size.y > 0) avatar.scale.multiplyScalar(avatarTargetHeight / size.y);
-
-                const actions = new Map();
-                const mixer = new THREE.AnimationMixer(avatar);
-                for (const clip of gltf.animations) {
-                    clip.tracks = clip.tracks.filter(track => track.name !== 'bone_1.position');
-                    const normalizedName = clip.name.toLowerCase();
-                    const animationName = normalizedName.includes('idle') ? 'idle'
-                        : normalizedName.includes('walk') ? 'walk'
-                        : normalizedName.includes('run') ? 'run'
-                        : normalizedName.includes('break') || normalizedName.includes('mine') ? 'break'
-                        : normalizedName;
-                    actions.set(animationName, mixer.clipAction(clip));
-                }
-
-                otherPlayers[id] = {
-                    avatar,
-                    mixer,
-                    actions,
-                    activeAnimation: null,
-                    lastPosition: null
-                };
-                scene.add(avatar);
-                playRemotePlayerAnimation(otherPlayers[id], actions.has('idle') ? 'idle' : actions.keys().next().value);
-            }, undefined, error => {
-                console.warn('Failed to load remote player model', error);
-                delete otherPlayers[id];
-            });
+            if (!avatarFactory) return;
+            const avatar = avatarFactory.create();
+            otherPlayers[id] = { avatar, lastPosition: null, animation: {} };
+            scene.add(avatar.root);
         }
 
         function updateRemotePlayer(remotePlayer, playerData) {
             const position = new THREE.Vector3(playerData.x, playerData.y - playerEyeHeight, playerData.z);
             const isMoving = remotePlayer.lastPosition &&
-                remotePlayer.lastPosition.distanceToSquared(position) > 0.0001;
-            remotePlayer.avatar.position.copy(position);
-            remotePlayer.avatar.rotation.set(0, (playerData.yaw || 0) + avatarFacingOffset, 0);
-            remotePlayer.avatar.updateMatrixWorld(true);
-            avatarBounds.setFromObject(remotePlayer.avatar);
-            remotePlayer.avatar.position.y += position.y - avatarBounds.min.y;
+                Math.hypot(remotePlayer.lastPosition.x - position.x, remotePlayer.lastPosition.z - position.z) > 0.01;
+            remotePlayer.avatar.root.position.copy(position);
+            remotePlayer.avatar.root.rotation.set(0, playerData.yaw || 0, 0);
             remotePlayer.lastPosition = position;
-            playRemotePlayerAnimation(
-                remotePlayer,
-                playerData.mining && remotePlayer.actions.has('break') ? 'break'
-                    : isMoving && playerData.sprinting && remotePlayer.actions.has('run') ? 'run'
-                    : isMoving && remotePlayer.actions.has('walk') ? 'walk'
-                    : 'idle'
-            );
+            remotePlayer.animation = {
+                moving: !!isMoving,
+                sprinting: !!playerData.sprinting,
+                mining: !!playerData.mining,
+                swimming: !!playerData.swimming
+            };
         }
 
         socket.on('state', (serverPlayers) => {
@@ -3679,9 +3782,8 @@
                 const pData = serverPlayers[id];
                 if (!otherPlayers[id]) {
                     loadRemotePlayer(id);
-                    continue;
                 }
-                if (!otherPlayers[id].loading) updateRemotePlayer(otherPlayers[id], pData);
+                if (otherPlayers[id]) updateRemotePlayer(otherPlayers[id], pData);
             }
         });
 
@@ -3710,7 +3812,7 @@
 
         socket.on('playerDisconnected', (id) => {
             if (otherPlayers[id]) {
-                if (otherPlayers[id].avatar) scene.remove(otherPlayers[id].avatar);
+                if (otherPlayers[id].avatar) scene.remove(otherPlayers[id].avatar.root);
                 delete otherPlayers[id];
             }
         });
@@ -3735,6 +3837,129 @@
         let velocityY = 0;
         let grounded = true;
         const move = { forward: false, back: false, left: false, right: false, sprint: false, flyUp: false, flyDown: false };
+        const mobileControls = document.getElementById('mobile-controls');
+        const mobileModeToggle = document.getElementById('mobile-mode-toggle');
+        const mobileJoystick = document.getElementById('mobile-joystick');
+        const mobileKnob = document.getElementById('mobile-joystick-knob');
+        const mobileSprint = document.getElementById('mobile-sprint');
+        let joystickPointer = null;
+        let lookPointer = null;
+
+        function resetMobileInput() {
+            joystickPointer = null;
+            lookPointer = null;
+            move.forward = move.back = move.left = move.right = false;
+            move.sprint = move.flyUp = move.flyDown = false;
+            mobileKnob.style.transform = '';
+            mobileSprint.setAttribute('aria-pressed', 'false');
+            miningActive = false;
+            miningElapsed = 0;
+            miningTargetKey = null;
+            updateMiningCracks(null, 0);
+        }
+
+        function updateMobileMode() {
+            resetMobileInput();
+            mobileControls.hidden = !mobileMode;
+            document.body.classList.toggle('mobile-mode', mobileMode);
+            mobileModeToggle.setAttribute('aria-pressed', String(mobileMode));
+            mobileModeToggle.textContent = `MOBILE: ${mobileMode ? 'ON' : 'OFF'}`;
+            if (mobileMode && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+        }
+        mobileModeToggle.addEventListener('click', () => {
+            mobileMode = !mobileMode;
+            updateMobileMode();
+        });
+        updateMobileMode();
+
+        function canUseMobileControls() {
+            return mobileMode && accountReady && authScreen.hidden && !roomSwitching &&
+                !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden &&
+                document.getElementById('admin-screen').hidden;
+        }
+
+        function updateMobileJoystick(event) {
+            const rect = mobileJoystick.getBoundingClientRect();
+            const dx = event.clientX - (rect.left + rect.width / 2);
+            const dy = event.clientY - (rect.top + rect.height / 2);
+            const radius = rect.width * 0.32;
+            const distance = Math.hypot(dx, dy);
+            const scale = distance > radius ? radius / distance : 1;
+            mobileKnob.style.transform = `translate(${dx * scale}px, ${dy * scale}px)`;
+            move.left = dx < -radius * 0.25;
+            move.right = dx > radius * 0.25;
+            move.forward = dy < -radius * 0.25;
+            move.back = dy > radius * 0.25;
+        }
+        mobileJoystick.addEventListener('pointerdown', event => {
+            if (!canUseMobileControls() || joystickPointer !== null) return;
+            event.preventDefault();
+            joystickPointer = event.pointerId;
+            mobileJoystick.setPointerCapture(event.pointerId);
+            updateMobileJoystick(event);
+        });
+        mobileJoystick.addEventListener('pointermove', event => {
+            if (event.pointerId === joystickPointer) updateMobileJoystick(event);
+        });
+        function releaseJoystick(event) {
+            if (event.pointerId !== joystickPointer) return;
+            joystickPointer = null;
+            mobileKnob.style.transform = '';
+            move.forward = move.back = move.left = move.right = false;
+        }
+        mobileJoystick.addEventListener('pointerup', releaseJoystick);
+        mobileJoystick.addEventListener('pointercancel', releaseJoystick);
+        mobileSprint.addEventListener('click', () => {
+            if (!canUseMobileControls()) return;
+            move.sprint = !move.sprint;
+            mobileSprint.setAttribute('aria-pressed', String(move.sprint));
+        });
+
+        function jump() {
+            if (flying) {
+                move.flyUp = true;
+                return;
+            }
+            const feetY = camera.position.y - playerEyeHeight;
+            if (grounded) {
+                velocityY = jumpSpeed;
+                grounded = false;
+            } else if (waterSurfaceAt(camera.position.x, feetY, camera.position.z) !== null) {
+                velocityY = Math.max(velocityY, jumpSpeed * 0.75);
+            }
+        }
+
+        function startMining() {
+            startHeldItemSwing();
+            aimedBlock = findAimedBlock();
+            miningActive = !!aimedBlock && aimedBlock.type !== 'bedrock';
+            miningTargetKey = aimedBlock ? blockKey(aimedBlock.x, aimedBlock.y, aimedBlock.z) : null;
+            miningElapsed = 0;
+            updateMiningCracks(null, 0);
+        }
+        function stopMining() {
+            miningActive = false;
+            miningElapsed = 0;
+            miningTargetKey = null;
+            updateMiningCracks(null, 0);
+        }
+        function bindMobileHold(id, start, stop) {
+            const button = document.getElementById(id);
+            button.addEventListener('pointerdown', event => {
+                if (!canUseMobileControls()) return;
+                event.preventDefault();
+                button.setPointerCapture(event.pointerId);
+                start();
+            });
+            button.addEventListener('pointerup', stop);
+            button.addEventListener('pointercancel', stop);
+        }
+        bindMobileHold('mobile-jump', jump, () => { move.flyUp = false; });
+        bindMobileHold('mobile-down', () => { if (flying) move.flyDown = true; }, () => { move.flyDown = false; });
+        bindMobileHold('mobile-mine', startMining, stopMining);
+        document.getElementById('mobile-place').addEventListener('click', () => {
+            if (canUseMobileControls()) performBlockAction(2);
+        });
         function toggleAdminFlight() {
             if (!isPlayerAdmin || !accountReady || !authScreen.hidden || roomSwitching) return;
             flying = !flying;
@@ -3785,23 +4010,17 @@
         }
 
         const viewDirection = new THREE.Vector3();
-        const viewOffset = new THREE.Vector3();
-        const viewHorizontalDirection = new THREE.Vector3();
         const viewTarget = new THREE.Vector3();
         const viewRayDirection = new THREE.Vector3();
         const viewRaycaster = new THREE.Raycaster();
-        const avatarBounds = new THREE.Box3();
         function updatePerspectiveCamera() {
             const perspectiveMode = perspectiveModes[perspectiveModeIndex];
             const authScreen = document.getElementById('auth-screen');
             heldItemModel.visible = perspectiveMode === 'first' && !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden && authScreen.hidden;
             if (playerAvatar) {
-                playerAvatar.visible = perspectiveMode !== 'first';
-                playerAvatar.position.set(camera.position.x, camera.position.y - playerEyeHeight, camera.position.z);
-                playerAvatar.rotation.set(0, look.yaw + avatarFacingOffset, 0);
-                playerAvatar.updateMatrixWorld(true);
-                avatarBounds.setFromObject(playerAvatar);
-                playerAvatar.position.y += camera.position.y - playerEyeHeight - avatarBounds.min.y;
+                playerAvatar.root.visible = perspectiveMode !== 'first';
+                playerAvatar.root.position.set(camera.position.x, camera.position.y - playerEyeHeight, camera.position.z);
+                playerAvatar.root.rotation.set(0, look.yaw, 0);
             }
             if (perspectiveMode === 'first') return camera;
 
@@ -3812,15 +4031,8 @@
                 camera.position.y - playerEyeHeight + 0.75,
                 camera.position.z
             );
-            viewHorizontalDirection.set(viewDirection.x, 0, viewDirection.z).normalize();
-            const orbitPitch = Math.max(-1.2, Math.min(1.2, look.pitch));
             const viewDistance = 6;
-            viewOffset.set(
-                viewHorizontalDirection.x * directionMultiplier * Math.cos(orbitPitch),
-                Math.sin(orbitPitch),
-                viewHorizontalDirection.z * directionMultiplier * Math.cos(orbitPitch)
-            );
-            viewRayDirection.copy(viewOffset).normalize();
+            viewRayDirection.copy(viewDirection).multiplyScalar(directionMultiplier);
             viewRaycaster.set(viewTarget, viewRayDirection);
             viewRaycaster.far = viewDistance;
 
@@ -3841,11 +4053,7 @@
                 safeDistance = Math.max(0.35, obstruction.distance - 0.3);
             }
             viewCamera.position.copy(viewTarget).addScaledVector(viewRayDirection, safeDistance);
-            if (perspectiveMode === 'thirdBack') {
-                viewCamera.rotation.copy(camera.rotation);
-            } else {
-                viewCamera.rotation.set(look.pitch, look.yaw + Math.PI, 0, 'YXZ');
-            }
+            viewCamera.lookAt(viewTarget);
             return viewCamera;
         }
 
@@ -3879,18 +4087,8 @@
                 else move.sprint = true;
             }
             if (key === ' ' || key === 'spacebar') {
-                if (flying) {
-                    e.preventDefault();
-                    move.flyUp = true;
-                    return;
-                }
-                const feetY = camera.position.y - playerEyeHeight;
-                if (grounded) {
-                    velocityY = jumpSpeed;
-                    grounded = false;
-                } else if (isWaterAt(camera.position.x, camera.position.z) && feetY < waterLevel) {
-                    velocityY = Math.max(velocityY, jumpSpeed * 0.75);
-                }
+                if (flying) e.preventDefault();
+                jump();
             }
         });
 
@@ -3905,14 +4103,10 @@
         });
 
         renderer.domElement.addEventListener('mousedown', e => {
+            if (mobileMode) return;
             if (e.button === 0) {
                 if (!authScreen.hidden || playerInventoryOpen || workbenchOpen || furnaceOpen || !blockPalette.hidden) return;
-                startHeldItemSwing();
-                aimedBlock = findAimedBlock();
-                miningActive = !!aimedBlock && aimedBlock.type !== 'bedrock';
-                miningTargetKey = aimedBlock ? blockKey(aimedBlock.x, aimedBlock.y, aimedBlock.z) : null;
-                miningElapsed = 0;
-                updateMiningCracks(null, 0);
+                startMining();
             }
             if (e.button === 2) {
                 e.preventDefault();
@@ -3926,6 +4120,29 @@
             look.dragging = true;
             look.lastX = e.clientX;
             look.lastY = e.clientY;
+        });
+
+        renderer.domElement.addEventListener('pointerdown', event => {
+            if (event.pointerType !== 'touch' || !canUseMobileControls() || lookPointer !== null) return;
+            event.preventDefault();
+            lookPointer = event.pointerId;
+            look.lastX = event.clientX;
+            look.lastY = event.clientY;
+            renderer.domElement.setPointerCapture(event.pointerId);
+        });
+        renderer.domElement.addEventListener('pointermove', event => {
+            if (event.pointerId !== lookPointer) return;
+            look.yaw -= (event.clientX - look.lastX) * 0.004;
+            look.pitch -= (event.clientY - look.lastY) * 0.004;
+            look.lastX = event.clientX;
+            look.lastY = event.clientY;
+            updateCameraRotation();
+        });
+        renderer.domElement.addEventListener('pointerup', event => {
+            if (event.pointerId === lookPointer) lookPointer = null;
+        });
+        renderer.domElement.addEventListener('pointercancel', event => {
+            if (event.pointerId === lookPointer) lookPointer = null;
         });
 
         document.addEventListener('pointerlockchange', () => {
@@ -3946,20 +4163,11 @@
         window.addEventListener('mouseup', e => {
             look.dragging = false;
             if (e.button === 0) {
-                miningActive = false;
-                miningElapsed = 0;
-                miningTargetKey = null;
-                updateMiningCracks(null, 0);
+                stopMining();
             }
         });
         window.addEventListener('blur', () => {
-            move.flyUp = false;
-            move.flyDown = false;
-            move.sprint = false;
-            miningActive = false;
-            miningElapsed = 0;
-            miningTargetKey = null;
-            updateMiningCracks(null, 0);
+            resetMobileInput();
         });
         window.addEventListener('mousemove', e => {
             if (!look.dragging) return;
@@ -3981,9 +4189,8 @@
                 playerSaveElapsed = 0;
                 savePlayerState();
             }
-            if (playerModelMixer) playerModelMixer.update(dt);
             for (const remotePlayer of Object.values(otherPlayers)) {
-                if (remotePlayer.mixer) remotePlayer.mixer.update(dt);
+                if (avatarFactory) avatarFactory.update(remotePlayer.avatar, remotePlayer.animation, dt);
             }
             targetScanElapsed += dt;
             if (targetScanElapsed >= 0.08) {
@@ -4026,10 +4233,11 @@
             if (move.right) moveDir.add(right);
             const isMoving = moveDir.lengthSq() > 0;
 
-            const inWater = isWaterAt(camera.position.x, camera.position.z);
             const feetY = camera.position.y - playerEyeHeight;
+            const waterSurface = waterSurfaceAt(camera.position.x, feetY, camera.position.z);
+            const inWater = waterSurface !== null;
             const supportEyeY = worldGroundEyeY(camera.position.x, camera.position.z, feetY);
-            const waterImmersion = inWater ? clamp01((waterLevel - feetY) / playerBodyHeight) : 0;
+            const waterImmersion = inWater ? clamp01((waterSurface - feetY) / playerBodyHeight) : 0;
             if (grounded) {
                 if (!isSupported(camera.position)) {
                     grounded = false;
@@ -4037,7 +4245,13 @@
                     velocityY = 0;
                 }
             }
-            updatePlayerAnimation(isMoving && grounded, miningActive, move.sprint);
+            const swimming = inWater && !grounded && !flying;
+            if (playerAvatar) avatarFactory.update(playerAvatar, {
+                moving: isMoving && (grounded || swimming),
+                mining: miningActive,
+                sprinting: move.sprint,
+                swimming
+            }, dt);
 
             if (moveDir.lengthSq() > 0) {
                 const movementSpeed = speed * (move.sprint ? 1.55 : 1);
@@ -4064,9 +4278,9 @@
                 velocityY = speed * ((move.flyUp ? 1 : 0) - (move.flyDown ? 1 : 0));
             }
             if (!grounded) {
-                const inWater = isWaterAt(camera.position.x, camera.position.z);
                 const currentFeetY = camera.position.y - playerEyeHeight;
-                const immersion = inWater ? clamp01((waterLevel - currentFeetY) / playerBodyHeight) : 0;
+                const currentWaterSurface = waterSurfaceAt(camera.position.x, currentFeetY, camera.position.z);
+                const immersion = currentWaterSurface !== null ? clamp01((currentWaterSurface - currentFeetY) / playerBodyHeight) : 0;
                 if (!flying) {
                     velocityY += (-gravity + gravity * 2.4 * immersion) * dt;
                     velocityY *= Math.exp(-7 * immersion * dt);
@@ -4108,7 +4322,8 @@
                 z: camera.position.z,
                 yaw: look.yaw,
                 sprinting: move.sprint,
-                mining: miningActive
+                mining: miningActive,
+                swimming
             });
 
             renderer.render(scene, updatePerspectiveCamera());

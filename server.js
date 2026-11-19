@@ -100,7 +100,11 @@ function discoverNamedSparkModels() {
 const namedSparkModels = discoverNamedSparkModels();
 app.use(express.static(__dirname));
 
-const blockTypes = new Set(['grass', 'dirt', 'sand', 'snow', 'stone', 'iron_ore', 'wood', 'leaves', 'planks', 'crafting_table', 'furnace', ...sparkBlockDefinitions.keys()]);
+const treeSpecies = ['spruce', 'jungle', 'acacia', 'cherry', 'birch', 'dark_oak'];
+const treeWoodTypes = new Set(['wood', ...treeSpecies.map(species => `${species}_wood`)]);
+const blockTypes = new Set(['grass', 'dirt', 'sand', 'snow', 'stone', 'iron_ore', 'wood', 'leaves', 'planks', 'crafting_table', 'furnace',
+  'moss_block', 'packed_ice', 'glow_mushroom', 'mushroom_stem',
+  ...treeSpecies.flatMap(species => [`${species}_wood`, `${species}_leaves`]), ...sparkBlockDefinitions.keys()]);
 const itemTypes = new Set([...blockTypes, 'iron_ingot', 'sticks', 'wooden_pickaxe', 'stone_pickaxe', 'wooden_axe', 'stone_axe', 'wooden_sword', 'stone_sword', 'torch']);
 const saveDirectory = process.env.PIXAME_SAVE_DIRECTORY || path.join(__dirname, 'save-data');
 const accountSavePath = path.join(saveDirectory, 'accounts.json');
@@ -513,7 +517,7 @@ app.post('/api/furnace', (request, response) => {
         return response.status(400).json({ error: 'Invalid inventory selection.' });
       }
       const source = profile[request.body.container][request.body.index];
-      const allowed = source && (slot === 'input' ? source.type === 'iron_ore' : ['wood', 'planks'].includes(source.type));
+      const allowed = source && (slot === 'input' ? source.type === 'iron_ore' : source.type === 'planks' || treeWoodTypes.has(source.type));
       if (!allowed || furnace[slot] && (furnace[slot].type !== source.type || furnace[slot].count >= 99)) {
         return response.status(400).json({ error: 'Select a compatible item and an available slot.' });
       }

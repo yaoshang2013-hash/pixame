@@ -2,10 +2,11 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <title>pixame</title>
     <link rel="stylesheet" href="/style.css">
     <script src="/node_modules/three/build/three.min.js"></script>
-    <script src="/node_modules/three/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="/player-avatar.js"></script>
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
@@ -34,6 +35,17 @@
         </div>
     </aside>
     <div id="crosshair" aria-hidden="true"></div>
+    <button id="mobile-mode-toggle" type="button" aria-pressed="false">MOBILE: OFF</button>
+    <div id="mobile-controls" hidden>
+        <div id="mobile-joystick" aria-label="Move"><div id="mobile-joystick-knob"></div></div>
+        <div id="mobile-actions">
+            <button type="button" id="mobile-sprint" aria-pressed="false">SPRINT</button>
+            <button type="button" id="mobile-jump">JUMP</button>
+            <button type="button" id="mobile-mine">MINE</button>
+            <button type="button" id="mobile-place">PLACE</button>
+            <button type="button" id="mobile-down" hidden>DOWN</button>
+        </div>
+    </div>
     <div id="selected-item-label" aria-live="polite" hidden></div>
     <button id="inventory-toggle" type="button" aria-expanded="false" aria-controls="player-inventory" title="Press B to browse placeable blocks">INVENTORY [E]</button>
     <aside id="block-palette" aria-label="Inventory and crafting" hidden>
@@ -77,13 +89,13 @@
     </aside>
     <aside id="player-inventory" aria-label="Player inventory" hidden>
         <div class="inventory-window">
-            <div class="inventory-window-header"><span>PLAYER INVENTORY</span><div><button class="palette-close" type="button" data-open-blocks>BLOCKS</button> <button class="palette-close" type="button" data-close-player-inventory aria-label="Close player inventory">X</button></div></div>
+            <div class="inventory-window-header"><span>PLAYER INVENTORY</span><div><button class="palette-close" type="button" data-open-blocks hidden>BLOCKS</button> <button class="palette-close" type="button" data-close-player-inventory aria-label="Close player inventory">X</button></div></div>
             <div class="inventory-content">
                 <section><h2 class="craft-section-title">BACKPACK</h2><div id="backpack-slots" class="inventory-slot-grid"></div></section>
                 <section><h2 class="craft-section-title">CRAFTING 2×2</h2><div id="player-craft-grid" class="inventory-craft-grid"></div><button id="player-craft-output" class="craft-output inventory-craft-output" type="button">Add materials</button></section>
             </div>
             <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="inventory-hotbar-slots" class="inventory-slot-grid"></div></section>
-            <p class="inventory-help">Drag items between slots to move, swap, or stack them. Click an item to select it; click an empty crafting cell to add one item, or right-click a filled cell to return it.</p>
+            <p class="inventory-help">Drag items between slots to move, swap, or stack them. In mobile mode, tap an item and then its destination. Select an item and tap a crafting cell to add it.</p>
         </div>
     </aside>
     <aside id="workbench-screen" aria-label="Crafting table" hidden>
@@ -136,6 +148,7 @@
         </div>
     </aside>
     <script src="/biomes.js"></script>
+    <script src="/caves.js"></script>
     <script>
         fetch('/api/rooms').then(response => {
             if (!response.ok) throw new Error('Could not load rooms.');

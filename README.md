@@ -31,8 +31,10 @@ changing this setting. Never put credentials or a client secret in the project
 directory.
 
 Administrators can toggle flight with F, ascend with Space and descend with
-Shift, and use the inventory's item selector. Their block placement, crafting
-and furnace inputs do not consume items. The ADMIN panel lists online players,
+Shift, and use the inventory's BLOCKS page and item selector. Their block
+placement, crafting and furnace inputs do not consume items; placeable blocks
+show an infinity symbol. Ordinary players cannot use the creative BLOCKS page.
+The ADMIN panel lists online players,
 supports kicking and timed or permanent account bans, and can remove bans.
 It can also create rooms or archive empty rooms; restoring an archived room by
 its name keeps its seed, world and player saves. At least one room must remain
@@ -43,6 +45,27 @@ There is currently no health or damage system, so invulnerability has no effect.
 These changes must be deployed and the environment variable configured on the
 hosting server before they are available there.
 
+## Mobile controls
+
+Touch devices enable MOBILE mode automatically; the button at the top also
+switches it manually. Use the left joystick to move and drag the game view to
+look around. Hold MINE to break a block, tap PLACE to place or interact, and
+use JUMP and SPRINT for movement. Administrators can use DOWN while flying.
+In inventory, tap a stack and then a destination to move, swap or stack it.
+Tap a filled crafting slot to return its item.
+
+## Player model
+
+The local and multiplayer avatars use `player.json` and the matching 64×64
+`player_texture.png`. They have basic idle, walking, sprinting, mining and
+swimming animations. These animations are implemented by the game rather
+than by interpreting the Minecraft-specific expressions in the JSON file.
+Optional cape and ear parts are not rendered because the skin does not contain
+their separate textures.
+
+Press V to cycle between first-person, rear third-person and front third-person
+views. Looking up or down also moves the third-person camera around the player.
+
 ## Distant terrain
 
 Faraway blocks use the top-left pixel of their side texture as a single color.
@@ -51,13 +74,21 @@ visible pixel. Nearby blocks keep their full textures and models.
 
 ## Biomes
 
-Chunks are 32×32 blocks. Each seeded climate region covers 4×4 chunks, with
-local rivers and mountains. Regions include plains, meadow, forest, taiga,
-rainforest, savanna, tundra, cherry grove, snow and desert. Temperature and
-humidity tint grass and foliage, and tree shapes and textures vary by region.
-Naturally generated tree blocks currently drop the existing generic wood and
-leaves items.
+Chunks are 32×32 blocks. Seeded climate regions cover multiple chunks and have
+curved boundaries and mixed transition zones. Regions include birch and dark
+forests, mixed woods, cold taiga, alpine meadow, dry scrub and frozen forest,
+as well as the existing plains, rainforest, savanna, tundra and desert.
+Temperature and humidity tint grass and foliage. Trees have varied shapes and
+branches; different species drop and place their own wood and leaves. Existing
+`wood` and `leaves` saves remain oak.
+
+Natural underground caves include mossy, icy and glowing mushroom areas.
+Frozen regions generate icy caves underneath, and some cave floors contain
+small 3–4-block depressions filled with water blocks.
+The new world generator changes naturally generated blocks without deleting
+player saves or edits.
 
 The biome generator applies to all rooms. Player edits and saves are retained,
 but previously generated natural terrain and trees can change under existing
-builds when the updated game is deployed.
+builds when the updated game is deployed. The terrain mixes flat areas,
+rounded hills, winding mountain ridges and river valleys.

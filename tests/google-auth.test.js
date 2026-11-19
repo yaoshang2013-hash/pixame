@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const net = require('node:net');
+const vm = require('node:vm');
 const { once } = require('node:events');
 const { io } = require('../node_modules/socket.io/client-dist/socket.io.js');
 
@@ -62,6 +63,25 @@ async function stopServer(child) {
   child.kill();
   await exited;
 }
+
+test('creative palette adds blocks only for an administrator', () => {
+  const source = fs.readFileSync(path.join(root, 'game.js'), 'utf8');
+  const start = source.indexOf('        function addPaletteBlock(');
+  const end = source.indexOf('        const adminItemSelect', start);
+  assert.ok(start !== -1 && end !== -1);
+  const context = vm.createContext({
+    isPlayerAdmin: false, placeableBlockTypes: new Set(['stone']),
+    hotbarItems: Array(8).fill(null), selectedHotbarIndex: 0,
+    updateHotbar() {}, showItemNotification() {}, setBlockPaletteOpen() {}
+  });
+  vm.runInContext(source.slice(start, end), context);
+  context.addPaletteBlock('stone');
+  assert.equal(context.hotbarItems[0], null);
+  context.isPlayerAdmin = true;
+  context.addPaletteBlock('stone');
+  assert.equal(context.hotbarItems[0].type, 'stone');
+  assert.equal(context.hotbarItems[0].count, 64);
+});
 
 test('room switch barrier reports a failed world save', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-room-failure-test-'));
@@ -260,6 +280,62 @@ test('Google sign-in verifies identity and retains its separate profile after re
   assert.deepEqual((await session.json()).profile, profile);
 });
 
+test('tree species and cave blocks survive profile and world saves', async t => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-species-test-'));
+  const port = await unusedPort();
+  let server = await startServer(directory, port);
+  const sockets = [];
+  t.after(async () => {
+    sockets.forEach(socket => socket.disconnect());
+    await stopServer(server);
+    fs.rmSync(directory, { recursive: true, force: true });
+  });
+  const base = `http://127.0.0.1:${port}`;
+  const post = (url, body, headers = {}) => fetch(base + url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Pixame-Room': 'lobby1', ...headers }, body: JSON.stringify(body)
+  });
+  let login = await (await post('/api/auth/google', { credential: 'valid-test-token' })).json();
+  const treeTypes = ['spruce', 'jungle', 'acacia', 'cherry', 'birch', 'dark_oak']
+    .flatMap(species => [`${species}_wood`, `${species}_leaves`]);
+  const profile = {
+    hotbarItems: [{ type: 'spruce_wood', count: 3 }, { type: 'cherry_leaves', count: 2 },
+      { type: 'packed_ice', count: 1 }, ...Array(5).fill(null)],
+    backpackItems: [...treeTypes.map(type => ({ type, count: 1 })), ...Array(27 - treeTypes.length).fill(null)],
+    selectedHotbarIndex: 0, position: { x: 1, y: 10, z: 2 }
+  };
+  let auth = { Authorization: `Bearer ${login.token}` };
+  assert.equal((await post('/api/player-profile', profile, { ...auth, 'X-Profile-Revision': '0' })).status, 200);
+  async function connect(token) {
+    const socket = io(base, { autoConnect: false, transports: ['websocket'], query: { room: 'lobby1' }, auth: { token }, timeout: 3000 });
+    sockets.push(socket);
+    const edits = once(socket, 'worldEdits');
+    socket.connect();
+    await once(socket, 'connect');
+    return { socket, edits: (await edits)[0] };
+  }
+  const first = await connect(login.token);
+  const edits = [...treeTypes, 'packed_ice', 'moss_block', 'glow_mushroom', 'mushroom_stem', 'furnace']
+    .map((placedType, x) => ({ x, y: 2, z: 1, removed: false, placedType }));
+  for (const edit of edits) assert.deepEqual(await first.socket.timeout(3000).emitWithAck('blockEdit', edit), { ok: true });
+  const furnace = edits[edits.length - 1];
+  const fuel = await post('/api/furnace', {
+    ...furnace, action: 'insert', slot: 'fuel', container: 'hotbarItems', index: 0, profile, revision: 1
+  }, auth);
+  assert.equal(fuel.status, 200);
+  const fueled = await fuel.json();
+  assert.equal(fueled.profile.hotbarItems[0].count, 2);
+  first.socket.disconnect();
+  await stopServer(server);
+  server = await startServer(directory, port);
+  login = await (await post('/api/auth/google', { credential: 'valid-test-token' })).json();
+  assert.equal(login.profile.hotbarItems[0].type, 'spruce_wood');
+  assert.equal(login.profile.hotbarItems[1].type, 'cherry_leaves');
+  assert.equal(login.profile.hotbarItems[2].type, 'packed_ice');
+  assert.deepEqual(login.profile.backpackItems.slice(0, treeTypes.length).map(item => item.type), treeTypes);
+  const restored = await connect(login.token);
+  assert.deepEqual(restored.edits, edits);
+});
+
 test('rooms isolate players, world edits, furnaces and player profiles across restarts', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-rooms-test-'));
   const legacyWorld = [{ x: 9, y: 1, z: 9, removed: false, placedType: 'wood' }];
@@ -320,7 +396,7 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
   assert.deepEqual((await observed)[0], edit);
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(leakedEdit, false);
-  first.socket.emit('move', { x: 2, y: 3, z: 4 });
+  first.socket.emit('move', { x: 2, y: 3, z: 4, swimming: true });
   const peerState = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Missing room player state')), 3000);
     peer.socket.on('state', state => {
@@ -331,6 +407,7 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
     });
   });
   assert.ok(peerState[first.socket.id]);
+  assert.equal(peerState[first.socket.id].swimming, true);
   const otherState = (await once(second.socket, 'state'))[0];
   assert.equal(otherState[first.socket.id], undefined);
   assert.deepEqual(await first.socket.timeout(3000).emitWithAck('roomSwitchBarrier'), { ok: true });
