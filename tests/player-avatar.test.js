@@ -55,6 +55,43 @@ test('sprint has its own faster, leaning gait', () => {
   assert.ok(sprintLegPeak > walkLegPeak);
 });
 
+test('forward walking and sprinting swing limbs in the corrected direction', () => {
+  const avatars = factory();
+  for (const [state, frames] of [
+    [{ moving: true }, 20],
+    [{ moving: true, sprinting: true }, 14]
+  ]) {
+    const avatar = avatars.create();
+    for (let i = 0; i < frames; i++) avatars.update(avatar, state, 0.05);
+    const cycle = Math.sin(avatar.phase);
+    assert.ok(cycle > 0.5);
+    assert.ok(avatar.limbs.right_leg.rotation.x * cycle > 0);
+    assert.ok(avatar.limbs.left_leg.rotation.x * cycle < 0);
+    assert.ok(avatar.limbs.right_arm.rotation.x * cycle < 0);
+    assert.ok(avatar.limbs.left_arm.rotation.x * cycle > 0);
+    assert.ok(avatar.limbs.right_arm.rotation.z > 0);
+    assert.ok(avatar.limbs.left_arm.rotation.z < 0);
+  }
+});
+
+test('backward and sideways movement use distinct original gaits', () => {
+  const avatars = factory();
+  const forward = avatars.create();
+  const backward = avatars.create();
+  const strafing = avatars.create();
+  for (let i = 0; i < 20; i++) {
+    avatars.update(forward, { moving: true, forwardMove: 1 }, 0.05);
+    avatars.update(backward, { moving: true, forwardMove: -1 }, 0.05);
+    avatars.update(strafing, { moving: true, strafeMove: 1 }, 0.05);
+  }
+  const cycle = Math.sin(forward.phase);
+  assert.ok(cycle > 0.5);
+  assert.ok(forward.limbs.right_leg.rotation.x * cycle > 0);
+  assert.ok(backward.limbs.right_leg.rotation.x * cycle < 0);
+  assert.ok(strafing.limbs.right_leg.rotation.z * cycle < 0);
+  assert.ok(strafing.limbs.left_leg.rotation.z * cycle > 0);
+});
+
 test('state changes play explicit transition animations', () => {
   const avatars = factory();
   const avatar = avatars.create();
@@ -71,6 +108,12 @@ test('state changes play explicit transition animations', () => {
   avatars.update(falling, { grounded: true }, 0.1);
   assert.equal(falling.transitionName, 'fall-to-land');
   assert.ok(falling.transitionPose.bob < 0);
+  assert.ok(falling.transitionPose.squash < 0);
+  assert.ok(falling.pose.scale.y < 1);
+  assert.ok(Math.abs(falling.pose.position.y - falling.pose.scale.y) < 1e-8);
+  avatars.update(falling, { grounded: true }, 0.15);
+  avatars.update(falling, { grounded: true }, 0.1);
+  assert.ok(falling.transitionPose.bob > 0);
 });
 
 test('jumping, falling, and flying blend into distinct airborne poses', () => {
@@ -86,10 +129,10 @@ test('jumping, falling, and flying blend into distinct airborne poses', () => {
   assert.ok(jumping.jumpStrength > 0.9);
   assert.ok(jumping.limbs.right_arm.rotation.x > 0.2);
   assert.ok(falling.fallStrength > 0.9);
-  assert.ok(falling.limbs.left_arm.rotation.z > 0.08);
+  assert.ok(falling.limbs.left_arm.rotation.z < -0.08);
   assert.ok(flying.flightStrength > 0.9);
   assert.equal(flying.jumpStrength, 0);
-  assert.ok(flying.limbs.left_arm.rotation.z > 0.3);
+  assert.ok(flying.limbs.left_arm.rotation.z < -0.3);
 });
 
 test('surface floating stays upright, bobs gently, and animates arms without swim strokes', () => {

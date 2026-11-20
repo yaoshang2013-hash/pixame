@@ -3811,6 +3811,8 @@
             remotePlayer.lastPosition = position;
             remotePlayer.animation = {
                 moving: !!isMoving,
+                forwardMove: Number.isFinite(playerData.forwardMove) ? playerData.forwardMove : (isMoving ? 1 : 0),
+                strafeMove: Number.isFinite(playerData.strafeMove) ? playerData.strafeMove : 0,
                 sprinting: !!playerData.sprinting,
                 mining: !!playerData.mining,
                 swimming: !!playerData.swimming,
@@ -4354,6 +4356,8 @@
             if (move.left) moveDir.sub(right);
             if (move.right) moveDir.add(right);
             const isMoving = moveDir.lengthSq() > 0;
+            const forwardMove = Number(move.forward) - Number(move.back);
+            const strafeMove = Number(move.right) - Number(move.left);
 
             const feetY = camera.position.y - playerEyeHeight;
             const waterSurface = waterSurfaceAt(camera.position.x, feetY, camera.position.z);
@@ -4374,6 +4378,8 @@
             const floating = waterAnimation === 'floating';
             if (playerAvatar) avatarFactory.update(playerAvatar, {
                 moving: isMoving,
+                forwardMove,
+                strafeMove,
                 mining: miningActive,
                 sprinting: move.sprint,
                 swimming,
@@ -4451,6 +4457,8 @@
                 y: camera.position.y,
                 z: camera.position.z,
                 yaw: look.yaw,
+                forwardMove,
+                strafeMove,
                 sprinting: move.sprint,
                 mining: miningActive,
                 swimming,
