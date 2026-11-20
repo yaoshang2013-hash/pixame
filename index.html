@@ -35,7 +35,7 @@
         </div>
     </aside>
     <div id="crosshair" aria-hidden="true"></div>
-    <button id="mobile-mode-toggle" type="button" aria-pressed="false">MOBILE: OFF</button>
+    <button id="settings-button" type="button" aria-expanded="false" aria-controls="settings-screen">SETTINGS</button>
     <div id="mobile-controls" hidden>
         <div id="mobile-joystick" aria-label="Move"><div id="mobile-joystick-knob"></div></div>
         <div id="mobile-actions">
@@ -46,8 +46,42 @@
             <button type="button" id="mobile-down" hidden>DOWN</button>
         </div>
     </div>
+    <aside id="settings-screen" role="dialog" aria-modal="true" aria-labelledby="settings-title" hidden>
+        <section class="settings-panel">
+            <header class="settings-header">
+                <h1 id="settings-title">SETTINGS</h1>
+                <button id="settings-close" class="settings-close" type="button" aria-label="Close settings">X</button>
+            </header>
+            <label class="settings-row" for="camera-sensitivity">
+                <span>SCREEN SENSITIVITY</span>
+                <output id="camera-sensitivity-value" for="camera-sensitivity">100%</output>
+                <input id="camera-sensitivity" type="range" min="25" max="300" step="5">
+            </label>
+            <label class="settings-row" for="mobile-control-size">
+                <span>MOBILE CONTROL SIZE</span>
+                <output id="mobile-control-size-value" for="mobile-control-size">100%</output>
+                <input id="mobile-control-size" type="range" min="75" max="140" step="5">
+            </label>
+            <label class="settings-row" for="camera-perspective">
+                <span>CAMERA VIEW</span>
+                <select id="camera-perspective">
+                    <option value="first">FIRST PERSON</option>
+                    <option value="thirdBack">THIRD PERSON - REAR</option>
+                    <option value="thirdFront">THIRD PERSON - FRONT</option>
+                </select>
+            </label>
+            <div class="settings-row">
+                <span>TOUCH CONTROLS</span>
+                <button id="mobile-mode-toggle" type="button" aria-pressed="false">MOBILE: OFF</button>
+            </div>
+            <div class="settings-footer">
+                <button id="settings-reset" type="button">RESET DEFAULTS</button>
+                <output id="settings-message" role="status"></output>
+            </div>
+        </section>
+    </aside>
     <div id="selected-item-label" aria-live="polite" hidden></div>
-    <button id="inventory-toggle" type="button" aria-expanded="false" aria-controls="player-inventory" title="Press B to browse placeable blocks">INVENTORY [E]</button>
+    <button id="inventory-toggle" type="button" aria-expanded="false" aria-controls="player-inventory">INVENTORY [E]</button>
     <aside id="block-palette" aria-label="Inventory and crafting" hidden>
         <div class="palette-header"><span>INVENTORY</span><button class="palette-close" type="button" aria-label="Close inventory">X</button></div>
         <div class="palette-tabs" role="tablist" aria-label="Inventory pages">
@@ -77,13 +111,12 @@
             </div>
             <div class="palette-grid spark-block-grid" id="spark-block-grid"></div>
             <div class="spark-block-pagination"><button id="spark-block-previous" type="button">PREVIOUS</button><span id="spark-block-page-status">Loading Spark blocks...</span><button id="spark-block-next" type="button">NEXT</button></div>
-            <p class="craft-help">Spark PNGs are placed as textured cubes. Furniture PNGs are texture sheets; matching model files are needed for furniture shapes.</p>
         </section>
         </div>
         <div class="palette-page" data-palette-page-content="craft" hidden>
             <div class="craft-layout">
                 <section><h2 class="craft-section-title">RECIPES</h2><div id="recipe-list" class="recipe-list"></div></section>
-                <section><h2 class="craft-section-title">WORKBENCH 3×3</h2><div id="craft-grid" class="craft-grid"></div><div id="craft-output" class="craft-output">Add materials</div><div class="craft-help">Select an item, then click a cell to add one. Right-click a cell to return it. Right-click the result to collect it.</div></section>
+                <section><h2 class="craft-section-title">WORKBENCH 3×3</h2><div id="craft-grid" class="craft-grid"></div><div id="craft-output" class="craft-output">Add materials</div></section>
             </div>
         </div>
     </aside>
@@ -95,7 +128,6 @@
                 <section><h2 class="craft-section-title">CRAFTING 2×2</h2><div id="player-craft-grid" class="inventory-craft-grid"></div><button id="player-craft-output" class="craft-output inventory-craft-output" type="button">Add materials</button></section>
             </div>
             <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="inventory-hotbar-slots" class="inventory-slot-grid"></div></section>
-            <p class="inventory-help">Drag items between slots to move, swap, or stack them. In mobile mode, tap an item and then its destination. Select an item and tap a crafting cell to add it.</p>
         </div>
     </aside>
     <aside id="workbench-screen" aria-label="Crafting table" hidden>
@@ -108,7 +140,6 @@
             </div>
             <section><h2 class="craft-section-title">BACKPACK</h2><div id="workbench-backpack-slots" class="inventory-slot-grid"></div></section>
             <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="workbench-hotbar-slots" class="inventory-slot-grid"></div></section>
-            <p class="inventory-help">Drag items between backpack and hotbar slots. Click a selected material into any crafting slot; right-click a slot to return it or the result to collect it.</p>
         </div>
     </aside>
     <aside id="furnace-screen" aria-label="Furnace" hidden>
@@ -124,7 +155,6 @@
             </div>
             <section><h2 class="craft-section-title">BACKPACK</h2><div id="furnace-backpack-slots" class="inventory-slot-grid"></div></section>
             <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="furnace-hotbar-slots" class="inventory-slot-grid"></div></section>
-            <p class="inventory-help">Drag items between backpack and hotbar slots. Select an item, then click INPUT or FUEL to add one. Right-click a slot to take one; click OUTPUT to collect. One wood or plank smelts one ore in 10 seconds. Removing the last ore wastes the burning fuel.</p>
         </div>
     </aside>
     <div id="hotbar" role="toolbar" aria-label="Inventory"></div>

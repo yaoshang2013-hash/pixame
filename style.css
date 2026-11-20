@@ -163,3 +163,27 @@
         @keyframes item-notification { 0% { transform: translateX(-50%) translateY(9px) scale(0.82); opacity: 0; } 15%, 75% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } 100% { transform: translateX(-50%) translateY(-5px) scale(0.96); opacity: 0; } }
         @media (max-width: 600px) { #inventory-toggle { right: 10px; bottom: 10px; padding: 7px 8px; font-size: 8px; } #block-palette { bottom: 66px; padding: 9px; } .palette-grid { gap: 3px; } .palette-block { min-height: 64px; font-size: 7px; } .palette-block .item-icon { width: 31px; height: 31px; } .craft-layout { grid-template-columns: 1fr; } .recipe-list { max-height: 120px; } #player-inventory, #workbench-screen { padding: 8px; } .inventory-window { padding: 10px; } .inventory-content { grid-template-columns: 1fr 128px; gap: 8px; } .inventory-craft-grid { grid-template-columns: repeat(2, 42px); } .inventory-craft-grid .craft-cell { width: 42px; height: 42px; } .inventory-craft-grid .craft-cell .item-icon { width: 36px; height: 36px; } .workbench-main { grid-template-columns: 1fr 44px 1fr; gap: 5px; } .workbench-craft-grid { grid-template-columns: repeat(3, 38px); gap: 4px; } .workbench-craft-grid .craft-cell { width: 38px; height: 38px; } .workbench-craft-grid .craft-cell .item-icon { width: 32px; height: 32px; } #hotbar { bottom: 10px; gap: 2px; padding: 3px; } .hotbar-slot { width: 39px; height: 43px; } .hotbar-slot .item-icon { width: 25px; height: 25px; margin-top: 8px; } #selected-item-label { bottom: 78px; font-size: 11px; } }
         @media (max-height: 500px) { #block-palette { bottom: 10px; max-height: calc(100vh - 48px); } }
+        :root { --mobile-joystick-size: 110px; --mobile-knob-size: 40px; --mobile-button-size: 64px; --mobile-button-height: 48px; --mobile-control-gap: 7px; --mobile-control-edge: 16px; --mobile-control-bottom: 100px; --mobile-control-font: 10px; }
+        #settings-button { position: fixed; top: 14px; right: 14px; z-index: 21; padding: 8px 11px; color: #f0f4ee; background: var(--ui-surface); border: 2px solid var(--ui-border); border-radius: 10px; font: bold 10px monospace; cursor: pointer; }
+        #settings-button[aria-expanded="true"] { color: #101914; background: rgba(195,225,202,0.82); }
+        #admin-flight { right: 14px; top: 54px; }
+        #admin-open { right: 14px; top: 94px; }
+        #settings-screen { position: fixed; inset: 0; z-index: 22; display: grid; place-items: center; padding: 16px; background: rgba(0,0,0,0.48); }
+        #settings-screen[hidden] { display: none; }
+        .settings-panel { box-sizing: border-box; width: min(440px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow: auto; padding: 18px; color: #f0f4ee; background: rgba(25,30,32,0.92); border: 2px solid #000; border-radius: 16px; box-shadow: 0 16px 42px rgba(0,0,0,0.52); font: 12px monospace; }
+        .settings-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .settings-header h1 { margin: 0; color: #d3ead5; font: bold 16px monospace; letter-spacing: 0.1em; }
+        .settings-close, #settings-reset { padding: 8px 10px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 8px; font: bold 11px monospace; cursor: pointer; }
+        .settings-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 12px 0; color: #e4eee5; border-top: 1px solid rgba(255,255,255,0.13); }
+        .settings-row output { color: #cceba8; font-variant-numeric: tabular-nums; }
+        .settings-row input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 3px 0; accent-color: #b7d9bb; }
+        .settings-row select { grid-column: 1 / -1; min-height: 38px; padding: 8px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 8px; font: inherit; }
+        .settings-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+        #settings-message { min-height: 1em; color: #ffb0a5; text-align: right; }
+        #mobile-mode-toggle { position: static; top: auto; left: auto; z-index: auto; transform: none; justify-self: end; padding: 8px 10px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 8px; font: bold 10px monospace; cursor: pointer; }
+        #mobile-mode-toggle[aria-pressed="true"] { color: #101914; background: rgba(195,225,202,0.82); }
+        #mobile-joystick { left: var(--mobile-control-edge); bottom: var(--mobile-control-bottom); width: var(--mobile-joystick-size); height: var(--mobile-joystick-size); }
+        #mobile-joystick-knob { left: calc((var(--mobile-joystick-size) - var(--mobile-knob-size)) / 2); top: calc((var(--mobile-joystick-size) - var(--mobile-knob-size)) / 2); width: var(--mobile-knob-size); height: var(--mobile-knob-size); }
+        #mobile-actions { right: var(--mobile-control-edge); bottom: var(--mobile-control-bottom); grid-template-columns: repeat(2, var(--mobile-button-size)); gap: var(--mobile-control-gap); }
+        #mobile-actions button { min-height: var(--mobile-button-height); font-size: var(--mobile-control-font); }
+        @media (max-width: 600px) { #settings-button { top: 10px; right: 10px; padding: 7px 9px; font-size: 9px; } .settings-panel { padding: 14px; } #mobile-mode-toggle { padding: 7px 9px; } }

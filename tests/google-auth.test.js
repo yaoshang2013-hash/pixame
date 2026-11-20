@@ -396,7 +396,7 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
   assert.deepEqual((await observed)[0], edit);
   await new Promise(resolve => setTimeout(resolve, 200));
   assert.equal(leakedEdit, false);
-  first.socket.emit('move', { x: 2, y: 3, z: 4, swimming: true });
+  first.socket.emit('move', { x: 2, y: 3, z: 4, swimming: true, floating: true });
   const peerState = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('Missing room player state')), 3000);
     peer.socket.on('state', state => {
@@ -408,6 +408,7 @@ test('rooms isolate players, world edits, furnaces and player profiles across re
   });
   assert.ok(peerState[first.socket.id]);
   assert.equal(peerState[first.socket.id].swimming, true);
+  assert.equal(peerState[first.socket.id].floating, true);
   const otherState = (await once(second.socket, 'state'))[0];
   assert.equal(otherState[first.socket.id], undefined);
   assert.deepEqual(await first.socket.timeout(3000).emitWithAck('roomSwitchBarrier'), { ok: true });

@@ -116,13 +116,52 @@
         heldItemLight.position.set(-2, 4, 5);
         heldItemScene.add(heldItemLight);
         const perspectiveModes = ['first', 'thirdBack', 'thirdFront'];
-        let perspectiveModeIndex = 0;
+        const settingsStorageKey = 'pixame.settings.v1';
+        const defaultSettings = {cameraSensitivity: 1, mobileControlScale: 1, cameraView: 'first', mobileMode: null};
+        let settingsLoadError = '';
+        function loadGameSettings() {
+            try {
+                const saved = JSON.parse(localStorage.getItem(settingsStorageKey) || 'null');
+                if (!saved || typeof saved !== 'object') return {...defaultSettings};
+                return {
+                    cameraSensitivity: Number.isFinite(saved.cameraSensitivity)
+                        ? Math.max(0.25, Math.min(3, saved.cameraSensitivity)) : defaultSettings.cameraSensitivity,
+                    mobileControlScale: Number.isFinite(saved.mobileControlScale)
+                        ? Math.max(0.75, Math.min(1.4, saved.mobileControlScale)) : defaultSettings.mobileControlScale,
+                    cameraView: perspectiveModes.includes(saved.cameraView) ? saved.cameraView : defaultSettings.cameraView,
+                    mobileMode: typeof saved.mobileMode === 'boolean' ? saved.mobileMode : defaultSettings.mobileMode
+                };
+            } catch (error) {
+                console.error('Failed to load game settings:', error);
+                settingsLoadError = 'Settings could not be loaded.';
+                return {...defaultSettings};
+            }
+        }
+        const gameSettings = loadGameSettings();
+        let perspectiveModeIndex = Math.max(0, perspectiveModes.indexOf(gameSettings.cameraView));
 
         const isiPad = /iPad|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
         const canPointerLock = 'pointerLockElement' in document || 'mozPointerLockElement' in document || 'webkitPointerLockElement' in document;
         const usePointerLock = canPointerLock && !isiPad;
         const wantsFullscreen = isiPad;
-        let mobileMode = window.matchMedia('(pointer: coarse)').matches;
+        let mobileMode = gameSettings.mobileMode === null
+            ? window.matchMedia('(pointer: coarse)').matches
+            : gameSettings.mobileMode;
+
+        function updateMobileControlScale() {
+            const shortSide = Math.min(window.innerWidth, window.innerHeight);
+            const scale = gameSettings.mobileControlScale;
+            const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+            const setPixelSize = (name, value) => document.documentElement.style.setProperty(name, `${Math.round(value)}px`);
+            setPixelSize('--mobile-joystick-size', clamp(shortSide * 0.28, 82, 128) * scale);
+            setPixelSize('--mobile-knob-size', clamp(shortSide * 0.1, 30, 48) * scale);
+            setPixelSize('--mobile-button-size', clamp(shortSide * 0.16, 50, 76) * scale);
+            setPixelSize('--mobile-button-height', clamp(shortSide * 0.13, 42, 62) * scale);
+            setPixelSize('--mobile-control-gap', clamp(shortSide * 0.018, 5, 10) * scale);
+            setPixelSize('--mobile-control-edge', clamp(shortSide * 0.035, 10, 25));
+            setPixelSize('--mobile-control-bottom', clamp(window.innerHeight * 0.14, 64, 112));
+            setPixelSize('--mobile-control-font', clamp(shortSide * 0.026, 8, 12) * scale);
+        }
 
         function enterFullscreen() {
             const el = document.documentElement;
@@ -152,9 +191,11 @@
             viewCamera.updateProjectionMatrix();
             heldItemCamera.aspect = camera.aspect;
             heldItemCamera.updateProjectionMatrix();
+            updateMobileControlScale();
         }
 
         window.addEventListener('resize', resize);
+        updateMobileControlScale();
 
         if (wantsFullscreen) {
             enterFullscreen();
@@ -3772,7 +3813,11 @@
                 moving: !!isMoving,
                 sprinting: !!playerData.sprinting,
                 mining: !!playerData.mining,
-                swimming: !!playerData.swimming
+                swimming: !!playerData.swimming,
+                floating: !!playerData.floating,
+                flying: !!playerData.flying,
+                grounded: playerData.grounded !== false,
+                verticalSpeed: Number.isFinite(playerData.verticalSpeed) ? playerData.verticalSpeed : 0
             };
         }
 
@@ -3839,6 +3884,14 @@
         const move = { forward: false, back: false, left: false, right: false, sprint: false, flyUp: false, flyDown: false };
         const mobileControls = document.getElementById('mobile-controls');
         const mobileModeToggle = document.getElementById('mobile-mode-toggle');
+        const settingsButton = document.getElementById('settings-button');
+        const settingsScreen = document.getElementById('settings-screen');
+        const settingsMessage = document.getElementById('settings-message');
+        const cameraSensitivityInput = document.getElementById('camera-sensitivity');
+        const cameraSensitivityValue = document.getElementById('camera-sensitivity-value');
+        const mobileControlSizeInput = document.getElementById('mobile-control-size');
+        const mobileControlSizeValue = document.getElementById('mobile-control-size-value');
+        const cameraPerspectiveSelect = document.getElementById('camera-perspective');
         const mobileJoystick = document.getElementById('mobile-joystick');
         const mobileKnob = document.getElementById('mobile-joystick-knob');
         const mobileSprint = document.getElementById('mobile-sprint');
@@ -3866,16 +3919,78 @@
             mobileModeToggle.textContent = `MOBILE: ${mobileMode ? 'ON' : 'OFF'}`;
             if (mobileMode && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
         }
+        function saveGameSettings() {
+            try {
+                localStorage.setItem(settingsStorageKey, JSON.stringify(gameSettings));
+                settingsMessage.textContent = '';
+                return true;
+            } catch (error) {
+                console.error('Failed to save game settings:', error);
+                settingsMessage.textContent = 'Could not save settings.';
+                return false;
+            }
+        }
+        function setSettingsOpen(open) {
+            if (open) {
+                resetMobileInput();
+                look.dragging = false;
+                if (document.pointerLockElement === renderer.domElement) document.exitPointerLock();
+                settingsScreen.hidden = false;
+                settingsMessage.textContent = settingsLoadError;
+            } else {
+                settingsScreen.hidden = true;
+            }
+            settingsButton.setAttribute('aria-expanded', String(open));
+        }
+        function renderSettings() {
+            cameraSensitivityInput.value = String(Math.round(gameSettings.cameraSensitivity * 100));
+            cameraSensitivityValue.textContent = `${cameraSensitivityInput.value}%`;
+            mobileControlSizeInput.value = String(Math.round(gameSettings.mobileControlScale * 100));
+            mobileControlSizeValue.textContent = `${mobileControlSizeInput.value}%`;
+            cameraPerspectiveSelect.value = perspectiveModes[perspectiveModeIndex];
+        }
+        renderSettings();
+        settingsButton.addEventListener('click', () => setSettingsOpen(settingsScreen.hidden));
+        document.getElementById('settings-close').addEventListener('click', () => setSettingsOpen(false));
+        cameraSensitivityInput.addEventListener('input', () => {
+            gameSettings.cameraSensitivity = Number(cameraSensitivityInput.value) / 100;
+            cameraSensitivityValue.textContent = `${cameraSensitivityInput.value}%`;
+            saveGameSettings();
+        });
+        mobileControlSizeInput.addEventListener('input', () => {
+            gameSettings.mobileControlScale = Number(mobileControlSizeInput.value) / 100;
+            mobileControlSizeValue.textContent = `${mobileControlSizeInput.value}%`;
+            updateMobileControlScale();
+            saveGameSettings();
+        });
+        cameraPerspectiveSelect.addEventListener('change', () => {
+            perspectiveModeIndex = perspectiveModes.indexOf(cameraPerspectiveSelect.value);
+            gameSettings.cameraView = cameraPerspectiveSelect.value;
+            saveGameSettings();
+        });
         mobileModeToggle.addEventListener('click', () => {
             mobileMode = !mobileMode;
+            gameSettings.mobileMode = mobileMode;
             updateMobileMode();
+            saveGameSettings();
+        });
+        document.getElementById('settings-reset').addEventListener('click', () => {
+            Object.assign(gameSettings, defaultSettings);
+            mobileMode = gameSettings.mobileMode === null
+                ? window.matchMedia('(pointer: coarse)').matches
+                : gameSettings.mobileMode;
+            perspectiveModeIndex = 0;
+            renderSettings();
+            updateMobileControlScale();
+            updateMobileMode();
+            saveGameSettings();
         });
         updateMobileMode();
 
         function canUseMobileControls() {
             return mobileMode && accountReady && authScreen.hidden && !roomSwitching &&
                 !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden &&
-                document.getElementById('admin-screen').hidden;
+                settingsScreen.hidden && document.getElementById('admin-screen').hidden;
         }
 
         function updateMobileJoystick(event) {
@@ -4059,6 +4174,10 @@
 
         window.addEventListener('keydown', e => {
             if (roomSwitching) return;
+            if (!settingsScreen.hidden) {
+                if (e.key === 'Escape') setSettingsOpen(false);
+                return;
+            }
             if (!document.getElementById('admin-screen').hidden) return;
             if (isTextInputTarget(e.target)) return;
             if (furnaceOpen || furnaceSaveUncertain) return;
@@ -4070,6 +4189,9 @@
             if (key === 'v') {
                 e.preventDefault();
                 perspectiveModeIndex = (perspectiveModeIndex + 1) % perspectiveModes.length;
+                gameSettings.cameraView = perspectiveModes[perspectiveModeIndex];
+                renderSettings();
+                saveGameSettings();
                 return;
             }
             if (key >= '1' && key <= '8') {
@@ -4132,8 +4254,8 @@
         });
         renderer.domElement.addEventListener('pointermove', event => {
             if (event.pointerId !== lookPointer) return;
-            look.yaw -= (event.clientX - look.lastX) * 0.004;
-            look.pitch -= (event.clientY - look.lastY) * 0.004;
+            look.yaw -= (event.clientX - look.lastX) * 0.004 * gameSettings.cameraSensitivity;
+            look.pitch -= (event.clientY - look.lastY) * 0.004 * gameSettings.cameraSensitivity;
             look.lastX = event.clientX;
             look.lastY = event.clientY;
             updateCameraRotation();
@@ -4155,8 +4277,8 @@
         });
 
         function onPointerLockMove(e) {
-            look.yaw -= e.movementX * 0.002;
-            look.pitch -= e.movementY * 0.002;
+            look.yaw -= e.movementX * 0.002 * gameSettings.cameraSensitivity;
+            look.pitch -= e.movementY * 0.002 * gameSettings.cameraSensitivity;
             updateCameraRotation();
         }
 
@@ -4175,8 +4297,8 @@
             const dy = e.clientY - look.lastY;
             look.lastX = e.clientX;
             look.lastY = e.clientY;
-            look.yaw -= dx * 0.002;
-            look.pitch -= dy * 0.002;
+            look.yaw -= dx * 0.002 * gameSettings.cameraSensitivity;
+            look.pitch -= dy * 0.002 * gameSettings.cameraSensitivity;
             updateCameraRotation();
         });
 
@@ -4245,12 +4367,20 @@
                     velocityY = 0;
                 }
             }
-            const swimming = inWater && !grounded && !flying;
+            const waterAnimation = !flying && inWater
+                ? playerWaterPose(waterSurface, feetY, camera.position.y, grounded)
+                : 'none';
+            const swimming = waterAnimation === 'swimming';
+            const floating = waterAnimation === 'floating';
             if (playerAvatar) avatarFactory.update(playerAvatar, {
-                moving: isMoving && (grounded || swimming),
+                moving: isMoving,
                 mining: miningActive,
                 sprinting: move.sprint,
-                swimming
+                swimming,
+                floating,
+                flying: flying && isPlayerAdmin,
+                grounded,
+                verticalSpeed: velocityY
             }, dt);
 
             if (moveDir.lengthSq() > 0) {
@@ -4323,7 +4453,11 @@
                 yaw: look.yaw,
                 sprinting: move.sprint,
                 mining: miningActive,
-                swimming
+                swimming,
+                floating,
+                flying: flying && isPlayerAdmin,
+                grounded,
+                verticalSpeed: velocityY
             });
 
             renderer.render(scene, updatePerspectiveCamera());

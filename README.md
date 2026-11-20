@@ -57,14 +57,14 @@ Tap a filled crafting slot to return its item.
 ## Player model
 
 The local and multiplayer avatars use `player.json` and the matching 64×64
-`player_texture.png`. They have basic idle, walking, sprinting, mining and
-swimming animations. These animations are implemented by the game rather
-than by interpreting the Minecraft-specific expressions in the JSON file.
-Optional cape and ear parts are not rendered because the skin does not contain
-their separate textures.
-
-Press V to cycle between first-person, rear third-person and front third-person
-views. Looking up or down also moves the third-person camera around the player.
+`player_texture.png`. Pixame's animation controller blends original poses for
+idle, walking, sprinting, jumping, falling, admin flight, mining, underwater
+swimming and surface floating, including for remote players. Minecraft-specific
+transitions such as standing-to-walking, walking-to-sprinting, falling-to-landing,
+and entering or leaving water have dedicated original transition clips.
+Minecraft-specific animation expressions in model or resource-pack files are not
+evaluated directly. Optional cape and ear parts are not rendered because the skin
+does not contain their separate textures.
 
 ## Distant terrain
 

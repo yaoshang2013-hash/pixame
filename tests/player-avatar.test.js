@@ -28,6 +28,81 @@ test('player skin is applied to separate animated body parts', () => {
   assert.equal(second.limbs.right_arm.rotation.x, 0);
 });
 
+test('model water expressions distinguish floating at the surface from underwater swimming', () => {
+  const avatars = factory();
+  assert.equal(avatars.waterPose(1, 0.2, 1.8, false), 'floating');
+  assert.equal(avatars.waterPose(1, 0.2, 1.8, true), 'none');
+  assert.equal(avatars.waterPose(1, 0.2, 0.9), 'swimming');
+  assert.equal(avatars.waterPose(null, 0.2, 0.9), 'none');
+  assert.equal(avatars.waterPose(1, 1, 1.8), 'none');
+});
+
+test('sprint has its own faster, leaning gait', () => {
+  const avatars = factory();
+  const walk = avatars.create();
+  const sprint = avatars.create();
+  let walkLegPeak = 0;
+  let sprintLegPeak = 0;
+  for (let i = 0; i < 40; i++) {
+    avatars.update(walk, { moving: true }, 0.1);
+    avatars.update(sprint, { moving: true, sprinting: true }, 0.1);
+    walkLegPeak = Math.max(walkLegPeak, Math.abs(walk.limbs.left_leg.rotation.x));
+    sprintLegPeak = Math.max(sprintLegPeak, Math.abs(sprint.limbs.left_leg.rotation.x));
+  }
+  assert.ok(sprint.sprintStrength > 0.9);
+  assert.ok(sprint.pose.rotation.x > walk.pose.rotation.x + 0.1);
+  assert.ok(sprint.phase > walk.phase * 1.4);
+  assert.ok(sprintLegPeak > walkLegPeak);
+});
+
+test('state changes play explicit transition animations', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  avatars.update(avatar, {}, 0.05);
+  avatars.update(avatar, { moving: true }, 0.05);
+  assert.equal(avatar.transitionName, 'stand-to-walk');
+  assert.notEqual(avatar.transitionPose.rightLeg, 0);
+
+  avatars.update(avatar, { moving: true, sprinting: true }, 0.05);
+  assert.equal(avatar.transitionName, 'walk-to-sprint');
+
+  const falling = avatars.create();
+  avatars.update(falling, { grounded: false, verticalSpeed: -4 }, 0.05);
+  avatars.update(falling, { grounded: true }, 0.1);
+  assert.equal(falling.transitionName, 'fall-to-land');
+  assert.ok(falling.transitionPose.bob < 0);
+});
+
+test('jumping, falling, and flying blend into distinct airborne poses', () => {
+  const avatars = factory();
+  const jumping = avatars.create();
+  const falling = avatars.create();
+  const flying = avatars.create();
+  for (let i = 0; i < 10; i++) {
+    avatars.update(jumping, { grounded: false, verticalSpeed: 4 }, 0.1);
+    avatars.update(falling, { grounded: false, verticalSpeed: -4 }, 0.1);
+    avatars.update(flying, { grounded: false, flying: true, verticalSpeed: 4 }, 0.1);
+  }
+  assert.ok(jumping.jumpStrength > 0.9);
+  assert.ok(jumping.limbs.right_arm.rotation.x > 0.2);
+  assert.ok(falling.fallStrength > 0.9);
+  assert.ok(falling.limbs.left_arm.rotation.z > 0.08);
+  assert.ok(flying.flightStrength > 0.9);
+  assert.equal(flying.jumpStrength, 0);
+  assert.ok(flying.limbs.left_arm.rotation.z > 0.3);
+});
+
+test('surface floating stays upright, bobs gently, and animates arms without swim strokes', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  for (let i = 0; i < 10; i++) avatars.update(avatar, { floating: true }, 0.1);
+  assert.ok(avatar.floatStrength > 0.9);
+  assert.ok(Math.abs(avatar.pose.rotation.x) < 0.2);
+  assert.ok(Math.abs(avatar.pose.position.y - 1) < 0.06);
+  assert.ok(Math.abs(avatar.limbs.right_arm.rotation.z) > 0.03);
+  assert.equal(avatar.swimStrength, 0);
+});
+
 test('mining and swimming poses transition independently of movement', () => {
   const avatars = factory();
   const avatar = avatars.create();
