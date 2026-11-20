@@ -28,6 +28,13 @@ test('player skin is applied to separate animated body parts', () => {
   assert.equal(second.limbs.right_arm.rotation.x, 0);
 });
 
+test('player model keeps its 180-degree forward-facing correction during animation', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  avatars.update(avatar, { moving: true, forwardMove: 1 }, 0.05);
+  assert.ok(Math.abs(avatar.pose.rotation.y - Math.PI) < 0.1);
+});
+
 test('model water expressions distinguish floating at the surface from underwater swimming', () => {
   const avatars = factory();
   assert.equal(avatars.waterPose(1, 0.2, 1.8, false), 'floating');
@@ -114,6 +121,19 @@ test('state changes play explicit transition animations', () => {
   avatars.update(falling, { grounded: true }, 0.15);
   avatars.update(falling, { grounded: true }, 0.1);
   assert.ok(falling.transitionPose.bob > 0);
+});
+
+test('jump takeoff has a brief anticipation followed by an extension', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  avatars.update(avatar, { grounded: false, verticalSpeed: 4 }, 0.05);
+  assert.equal(avatar.transitionName, 'jump-takeoff');
+  assert.ok(avatar.transitionPose.squash < 0);
+  assert.ok(avatar.pose.scale.y < 1);
+
+  avatars.update(avatar, { grounded: false, verticalSpeed: 4 }, 0.1);
+  assert.ok(avatar.transitionPose.squash > 0);
+  assert.ok(avatar.pose.scale.y > 1);
 });
 
 test('jumping, falling, and flying blend into distinct airborne poses', () => {

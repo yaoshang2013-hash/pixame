@@ -61,7 +61,8 @@ The local and multiplayer avatars use `player.json` and the matching 64×64
 idle, walking, sprinting, jumping, falling, admin flight, mining, underwater
 swimming and surface floating, including directional backward and strafe gaits
 with counter-swinging limbs for remote players. Landings use a squash, rebound
-and recovery sequence. Minecraft-specific
+and recovery sequence, while jumps use a brief anticipation and takeoff extension.
+Minecraft-specific
 transitions such as standing-to-walking, walking-to-sprinting, falling-to-landing,
 and entering or leaving water have dedicated original transition clips.
 Minecraft-specific animation expressions in model or resource-pack files are not

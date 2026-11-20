@@ -20,6 +20,7 @@
   }
   const parts = new Map(model.models.map(part => [part.part, part]));
   const [textureWidth, textureHeight] = model.textureSize;
+  const modelYawOffset = Math.PI;
   texture.encoding = THREE.sRGBEncoding;
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -64,6 +65,17 @@
       { time: 1 }
     ]
   };
+  const jumpTakeoff = {
+    name: 'jump-takeoff',
+    duration: 0.3,
+    keyframes: [
+      { time: 0 },
+      { time: 0.22, pitch: -0.06, squash: -0.06, rightArm: -0.14, leftArm: -0.1, rightLeg: 0.16, leftLeg: 0.14, bob: -0.03 },
+      { time: 0.52, pitch: 0.16, squash: 0.045, rightArm: 0.12, leftArm: 0.16, rightLeg: -0.1, leftLeg: -0.12, bob: 0.035 },
+      { time: 0.78, pitch: 0.04, squash: 0, rightArm: 0.04, leftArm: 0.04, rightLeg: -0.04, leftLeg: -0.04, bob: 0.01 },
+      { time: 1 }
+    ]
+  };
   const landing = {
     name: 'fall-to-land',
     duration: 0.5,
@@ -98,6 +110,9 @@
     'walk>idle': walkToStand,
     'walk>sprint': walkToSprint,
     'sprint>walk': sprintToWalk,
+    'idle>jump': jumpTakeoff,
+    'walk>jump': jumpTakeoff,
+    'sprint>jump': jumpTakeoff,
     'jump>fall': {
       name: 'jump-to-fall',
       duration: 0.24,
@@ -177,6 +192,7 @@
     const root = new THREE.Group();
     const pose = new THREE.Group();
     pose.position.y = 1;
+    pose.rotation.y = modelYawOffset;
     root.add(pose);
     const limbs = {};
     for (const [base, overlay] of [
@@ -282,7 +298,7 @@
       Math.max(0, -forwardMove) * 0.08 * walk +
       (transitionPose.pitch || 0);
     avatar.pose.rotation.x += (targetPitch - avatar.pose.rotation.x) * transition;
-    const targetYaw = cycle * 0.025 * (run + float) + Math.sin(avatar.phase * 0.35) * 0.018 * walk +
+    const targetYaw = modelYawOffset + cycle * 0.025 * (run + float) + Math.sin(avatar.phase * 0.35) * 0.018 * walk +
       strafeMove * 0.07 * (walk + run);
     avatar.pose.rotation.y += (targetYaw - avatar.pose.rotation.y) * transition;
     const targetRoll = cycle * (0.035 * run + 0.025 * walk) + Math.sin(avatar.phase * 0.5) * 0.04 * float -
