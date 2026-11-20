@@ -117,28 +117,94 @@
         heldItemScene.add(heldItemLight);
         const perspectiveModes = ['first', 'thirdBack', 'thirdFront'];
         const settingsStorageKey = 'pixame.settings.v1';
-        const defaultSettings = {cameraSensitivity: 1, mobileControlScale: 1, cameraView: 'first', mobileMode: null};
+        const defaultSettings = {cameraSensitivity: 1, mobileControlScale: 1, cameraView: 'first', mobileMode: null, shoulderSide: 'right'};
+        const defaultKeybindings = {
+            moveForward: ['KeyW', 'ArrowUp'],
+            moveBackward: ['KeyS', 'ArrowDown'],
+            moveLeft: ['KeyA', 'ArrowLeft'],
+            moveRight: ['KeyD', 'ArrowRight'],
+            jump: ['Space'],
+            sprint: ['ShiftLeft'],
+            togglePerspective: ['KeyV'],
+            toggleShoulder: ['KeyC'],
+            toggleFlight: ['KeyF'],
+            inventory: ['KeyE'],
+            blockPalette: ['KeyB'],
+            hotbar1: ['Digit1'],
+            hotbar2: ['Digit2'],
+            hotbar3: ['Digit3'],
+            hotbar4: ['Digit4'],
+            hotbar5: ['Digit5'],
+            hotbar6: ['Digit6'],
+            hotbar7: ['Digit7'],
+            hotbar8: ['Digit8']
+        };
+        const keybindingActions = [
+            ['moveForward', 'MOVE FORWARD'], ['moveBackward', 'MOVE BACKWARD'],
+            ['moveLeft', 'MOVE LEFT'], ['moveRight', 'MOVE RIGHT'],
+            ['jump', 'JUMP'], ['sprint', 'SPRINT'],
+            ['togglePerspective', 'CHANGE CAMERA'], ['toggleShoulder', 'SWITCH SHOULDER'],
+            ['toggleFlight', 'ADMIN FLIGHT'], ['inventory', 'INVENTORY'],
+            ['blockPalette', 'BLOCK PALETTE'],
+            ...Array.from({length: 8}, (_, index) => [`hotbar${index + 1}`, `HOTBAR ${index + 1}`])
+        ];
+        function createDefaultKeybindings() {
+            return Object.fromEntries(Object.entries(defaultKeybindings).map(([action, codes]) => [action, [...codes]]));
+        }
+        function createDefaultSettings() {
+            return {...defaultSettings, keybindings: createDefaultKeybindings()};
+        }
         let settingsLoadError = '';
         function loadGameSettings() {
             try {
                 const saved = JSON.parse(localStorage.getItem(settingsStorageKey) || 'null');
-                if (!saved || typeof saved !== 'object') return {...defaultSettings};
+                if (!saved || typeof saved !== 'object') return createDefaultSettings();
+                const keybindings = createDefaultKeybindings();
+                let invalidKeybindings = false;
+                if (saved.keybindings && typeof saved.keybindings === 'object' && !Array.isArray(saved.keybindings)) {
+                    for (const action of Object.keys(defaultKeybindings)) {
+                        const codes = saved.keybindings[action];
+                        if (codes === undefined) continue;
+                        if (!Array.isArray(codes) || codes.length === 0 || codes.length > 2 ||
+                            !codes.every(code => typeof code === 'string' && code.length > 0 && code.length <= 32)) {
+                            invalidKeybindings = true;
+                            continue;
+                        }
+                        keybindings[action] = [...new Set(codes)];
+                    }
+                    const usedCodes = new Set();
+                    for (const codes of Object.values(keybindings)) {
+                        for (const code of codes) {
+                            if (usedCodes.has(code)) invalidKeybindings = true;
+                            usedCodes.add(code);
+                        }
+                    }
+                    if (invalidKeybindings) {
+                        console.warn('Invalid saved key bindings; using defaults.');
+                        settingsLoadError = 'Invalid key bindings were reset to defaults.';
+                    }
+                }
                 return {
                     cameraSensitivity: Number.isFinite(saved.cameraSensitivity)
                         ? Math.max(0.25, Math.min(3, saved.cameraSensitivity)) : defaultSettings.cameraSensitivity,
                     mobileControlScale: Number.isFinite(saved.mobileControlScale)
                         ? Math.max(0.75, Math.min(1.4, saved.mobileControlScale)) : defaultSettings.mobileControlScale,
                     cameraView: perspectiveModes.includes(saved.cameraView) ? saved.cameraView : defaultSettings.cameraView,
-                    mobileMode: typeof saved.mobileMode === 'boolean' ? saved.mobileMode : defaultSettings.mobileMode
+                    mobileMode: typeof saved.mobileMode === 'boolean' ? saved.mobileMode : defaultSettings.mobileMode,
+                    shoulderSide: saved.shoulderSide === 'left' ? 'left' : defaultSettings.shoulderSide,
+                    keybindings: invalidKeybindings ? createDefaultKeybindings() : keybindings
                 };
             } catch (error) {
                 console.error('Failed to load game settings:', error);
                 settingsLoadError = 'Settings could not be loaded.';
-                return {...defaultSettings};
+                return createDefaultSettings();
             }
         }
         const gameSettings = loadGameSettings();
         let perspectiveModeIndex = Math.max(0, perspectiveModes.indexOf(gameSettings.cameraView));
+        function isKeyBound(action, event) {
+            return gameSettings.keybindings[action].includes(event.code);
+        }
 
         const isiPad = /iPad|Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1;
         const canPointerLock = 'pointerLockElement' in document || 'mozPointerLockElement' in document || 'webkitPointerLockElement' in document;
@@ -3592,13 +3658,13 @@
             if (!document.getElementById('admin-screen').hidden) return;
             if (isTextInputTarget(event.target)) return;
             if (furnacePending || furnaceSaveUncertain) return;
-            if (event.key.toLowerCase() === 'b') {
+            if (isKeyBound('blockPalette', event)) {
                 event.preventDefault();
                 setPlayerInventoryOpen(false);
                 setBlockPaletteOpen(blockPalette.hidden);
                 return;
             }
-            if (event.key.toLowerCase() === 'e') {
+            if (isKeyBound('inventory', event)) {
                 event.preventDefault();
                 if (furnaceOpen) { setFurnaceOpen(false); return; }
                 if (workbenchOpen) { setWorkbenchOpen(false); return; }
@@ -3645,7 +3711,7 @@
         }
 
         function findAimedBlock() {
-            blockRaycaster.setFromCamera(screenCenter, camera);
+            blockRaycaster.setFromCamera(screenCenter, getAimCamera());
             const candidates = [];
             for (const chunk of terrainChunks.values()) {
                 const minX = chunk.chunkX * chunkSize;
@@ -3807,7 +3873,7 @@
             const isMoving = remotePlayer.lastPosition &&
                 Math.hypot(remotePlayer.lastPosition.x - position.x, remotePlayer.lastPosition.z - position.z) > 0.01;
             remotePlayer.avatar.root.position.copy(position);
-            remotePlayer.avatar.root.rotation.set(0, playerData.yaw || 0, 0);
+            avatarFactory.setFacingYaw(remotePlayer.avatar, playerData.yaw || 0);
             remotePlayer.lastPosition = position;
             remotePlayer.animation = {
                 moving: !!isMoving,
@@ -3894,11 +3960,62 @@
         const mobileControlSizeInput = document.getElementById('mobile-control-size');
         const mobileControlSizeValue = document.getElementById('mobile-control-size-value');
         const cameraPerspectiveSelect = document.getElementById('camera-perspective');
+        const shoulderSideRow = document.getElementById('shoulder-side-row');
+        const shoulderSideSelect = document.getElementById('shoulder-side');
+        const keybindingsList = document.getElementById('keybindings-list');
         const mobileJoystick = document.getElementById('mobile-joystick');
         const mobileKnob = document.getElementById('mobile-joystick-knob');
         const mobileSprint = document.getElementById('mobile-sprint');
+        const mobileShoulderToggle = document.getElementById('mobile-shoulder-toggle');
         let joystickPointer = null;
         let lookPointer = null;
+        let pendingKeybinding = null;
+
+        function keyLabel(code) {
+            const labels = {
+                ArrowUp: 'UP ARROW', ArrowDown: 'DOWN ARROW',
+                ArrowLeft: 'LEFT ARROW', ArrowRight: 'RIGHT ARROW',
+                Space: 'SPACE', ShiftLeft: 'LEFT SHIFT', ShiftRight: 'RIGHT SHIFT',
+                ControlLeft: 'LEFT CTRL', ControlRight: 'RIGHT CTRL',
+                AltLeft: 'LEFT ALT', AltRight: 'RIGHT ALT'
+            };
+            if (labels[code]) return labels[code];
+            if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+            if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+            return code;
+        }
+
+        function renderKeybindings() {
+            keybindingsList.replaceChildren();
+            for (const [action, label] of keybindingActions) {
+                const row = document.createElement('div');
+                row.className = 'keybinding-row';
+                const actionLabel = document.createElement('span');
+                actionLabel.textContent = label;
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.dataset.keybinding = action;
+                button.setAttribute('aria-pressed', String(pendingKeybinding === action));
+                button.textContent = pendingKeybinding === action
+                    ? 'PRESS KEY…'
+                    : gameSettings.keybindings[action].map(keyLabel).join(' / ');
+                row.append(actionLabel, button);
+                keybindingsList.append(row);
+            }
+        }
+
+        function updateShoulderToggleButton() {
+            const shoulder = gameSettings.shoulderSide.toUpperCase();
+            mobileShoulderToggle.textContent = `SHOULDER: ${shoulder}`;
+            mobileShoulderToggle.hidden = !mobileMode || perspectiveModes[perspectiveModeIndex] === 'first';
+        }
+
+        function setShoulderSide(side) {
+            gameSettings.shoulderSide = side === 'left' ? 'left' : 'right';
+            shoulderSideSelect.value = gameSettings.shoulderSide;
+            updateShoulderToggleButton();
+            saveGameSettings();
+        }
 
         function resetMobileInput() {
             joystickPointer = null;
@@ -3919,6 +4036,7 @@
             document.body.classList.toggle('mobile-mode', mobileMode);
             mobileModeToggle.setAttribute('aria-pressed', String(mobileMode));
             mobileModeToggle.textContent = `MOBILE: ${mobileMode ? 'ON' : 'OFF'}`;
+            updateShoulderToggleButton();
             if (mobileMode && document.pointerLockElement === renderer.domElement) document.exitPointerLock();
         }
         function saveGameSettings() {
@@ -3940,6 +4058,8 @@
                 settingsScreen.hidden = false;
                 settingsMessage.textContent = settingsLoadError;
             } else {
+                pendingKeybinding = null;
+                renderKeybindings();
                 settingsScreen.hidden = true;
             }
             settingsButton.setAttribute('aria-expanded', String(open));
@@ -3950,6 +4070,10 @@
             mobileControlSizeInput.value = String(Math.round(gameSettings.mobileControlScale * 100));
             mobileControlSizeValue.textContent = `${mobileControlSizeInput.value}%`;
             cameraPerspectiveSelect.value = perspectiveModes[perspectiveModeIndex];
+            shoulderSideSelect.value = gameSettings.shoulderSide;
+            shoulderSideRow.hidden = perspectiveModes[perspectiveModeIndex] === 'first';
+            updateShoulderToggleButton();
+            renderKeybindings();
         }
         renderSettings();
         settingsButton.addEventListener('click', () => setSettingsOpen(settingsScreen.hidden));
@@ -3968,20 +4092,61 @@
         cameraPerspectiveSelect.addEventListener('change', () => {
             perspectiveModeIndex = perspectiveModes.indexOf(cameraPerspectiveSelect.value);
             gameSettings.cameraView = cameraPerspectiveSelect.value;
+            renderSettings();
             saveGameSettings();
         });
+        shoulderSideSelect.addEventListener('change', () => setShoulderSide(shoulderSideSelect.value));
+        keybindingsList.addEventListener('click', event => {
+            const button = event.target.closest('button[data-keybinding]');
+            if (!button) return;
+            pendingKeybinding = button.dataset.keybinding;
+            const actionLabel = keybindingActions.find(([action]) => action === pendingKeybinding)?.[1];
+            settingsMessage.textContent = `Press a key for ${actionLabel}. Escape cancels.`;
+            renderKeybindings();
+        });
+        window.addEventListener('keydown', event => {
+            if (!pendingKeybinding) return;
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            if (event.code === 'Escape') {
+                pendingKeybinding = null;
+                settingsMessage.textContent = '';
+                renderKeybindings();
+                return;
+            }
+            if (/^(Shift|Control|Alt|Meta)(Left|Right)$/.test(event.code)) {
+                settingsMessage.textContent = 'Choose a non-modifier key.';
+                return;
+            }
+            const conflict = keybindingActions.find(([action]) =>
+                action !== pendingKeybinding && gameSettings.keybindings[action].includes(event.code)
+            );
+            if (conflict) {
+                settingsMessage.textContent = `${keyLabel(event.code)} is already assigned to ${conflict[1]}.`;
+                return;
+            }
+            gameSettings.keybindings[pendingKeybinding] = [event.code];
+            pendingKeybinding = null;
+            renderKeybindings();
+            saveGameSettings();
+        }, true);
         mobileModeToggle.addEventListener('click', () => {
             mobileMode = !mobileMode;
             gameSettings.mobileMode = mobileMode;
             updateMobileMode();
             saveGameSettings();
         });
+        mobileShoulderToggle.addEventListener('click', () => {
+            if (!canUseMobileControls()) return;
+            setShoulderSide(gameSettings.shoulderSide === 'right' ? 'left' : 'right');
+        });
         document.getElementById('settings-reset').addEventListener('click', () => {
-            Object.assign(gameSettings, defaultSettings);
+            Object.assign(gameSettings, createDefaultSettings());
             mobileMode = gameSettings.mobileMode === null
                 ? window.matchMedia('(pointer: coarse)').matches
                 : gameSettings.mobileMode;
             perspectiveModeIndex = 0;
+            pendingKeybinding = null;
             renderSettings();
             updateMobileControlScale();
             updateMobileMode();
@@ -4088,6 +4253,9 @@
         }
         document.getElementById('admin-flight').addEventListener('click', toggleAdminFlight);
         const look = { dragging: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0 };
+        let thirdPersonYaw = look.yaw;
+        let previousPerspectiveMode = perspectiveModes[perspectiveModeIndex];
+        const shoulderOffset = 0.42;
         const heldItemSwingDuration = 0.32;
         let heldItemSwingElapsed = heldItemSwingDuration;
         let heldItemWalkPhase = 0;
@@ -4127,9 +4295,24 @@
         }
 
         const viewDirection = new THREE.Vector3();
+        const viewRight = new THREE.Vector3();
         const viewTarget = new THREE.Vector3();
         const viewRayDirection = new THREE.Vector3();
         const viewRaycaster = new THREE.Raycaster();
+        function updateThirdPersonFollow(dt) {
+            const perspectiveMode = perspectiveModes[perspectiveModeIndex];
+            if (perspectiveMode === 'first' || previousPerspectiveMode === 'first') {
+                thirdPersonYaw = look.yaw;
+            } else {
+                const difference = Math.atan2(
+                    Math.sin(look.yaw - thirdPersonYaw),
+                    Math.cos(look.yaw - thirdPersonYaw)
+                );
+                thirdPersonYaw += difference * (1 - Math.exp(-8 * dt));
+            }
+            previousPerspectiveMode = perspectiveMode;
+        }
+
         function updatePerspectiveCamera() {
             const perspectiveMode = perspectiveModes[perspectiveModeIndex];
             const authScreen = document.getElementById('auth-screen');
@@ -4137,18 +4320,25 @@
             if (playerAvatar) {
                 playerAvatar.root.visible = perspectiveMode !== 'first';
                 playerAvatar.root.position.set(camera.position.x, camera.position.y - playerEyeHeight, camera.position.z);
-                playerAvatar.root.rotation.set(0, look.yaw, 0);
+                avatarFactory.setFacingYaw(playerAvatar, look.yaw);
             }
             if (perspectiveMode === 'first') return camera;
 
-            camera.getWorldDirection(viewDirection);
             const directionMultiplier = perspectiveMode === 'thirdBack' ? -1 : 1;
+            const cosPitch = Math.cos(look.pitch);
+            viewDirection.set(
+                -Math.sin(thirdPersonYaw) * cosPitch,
+                Math.sin(look.pitch),
+                -Math.cos(thirdPersonYaw) * cosPitch
+            ).normalize();
+            viewRight.crossVectors(viewDirection, camera.up).normalize().multiplyScalar(-directionMultiplier);
             viewTarget.set(
                 camera.position.x,
                 camera.position.y - playerEyeHeight + 0.75,
                 camera.position.z
             );
-            const viewDistance = 6;
+            viewTarget.addScaledVector(viewRight, shoulderOffset * (gameSettings.shoulderSide === 'left' ? -1 : 1));
+            const viewDistance = 4.8;
             viewRayDirection.copy(viewDirection).multiplyScalar(directionMultiplier);
             viewRaycaster.set(viewTarget, viewRayDirection);
             viewRaycaster.far = viewDistance;
@@ -4171,7 +4361,16 @@
             }
             viewCamera.position.copy(viewTarget).addScaledVector(viewRayDirection, safeDistance);
             viewCamera.lookAt(viewTarget);
+            viewCamera.updateMatrixWorld(true);
             return viewCamera;
+        }
+
+        function getAimCamera() {
+            const aimCamera = perspectiveModes[perspectiveModeIndex] === 'first'
+                ? camera
+                : updatePerspectiveCamera();
+            aimCamera.updateMatrixWorld(true);
+            return aimCamera;
         }
 
         window.addEventListener('keydown', e => {
@@ -4183,12 +4382,11 @@
             if (!document.getElementById('admin-screen').hidden) return;
             if (isTextInputTarget(e.target)) return;
             if (furnaceOpen || furnaceSaveUncertain) return;
-            const key = e.key.toLowerCase();
-            if (key === 'f' && !e.repeat && !playerInventoryOpen && !workbenchOpen && blockPalette.hidden) {
+            if (isKeyBound('toggleFlight', e) && !e.repeat && !playerInventoryOpen && !workbenchOpen && blockPalette.hidden) {
                 toggleAdminFlight();
                 return;
             }
-            if (key === 'v') {
+            if (isKeyBound('togglePerspective', e) && !e.repeat) {
                 e.preventDefault();
                 perspectiveModeIndex = (perspectiveModeIndex + 1) % perspectiveModes.length;
                 gameSettings.cameraView = perspectiveModes[perspectiveModeIndex];
@@ -4196,34 +4394,38 @@
                 saveGameSettings();
                 return;
             }
-            if (key >= '1' && key <= '8') {
-                selectedHotbarIndex = Number(key) - 1;
+            if (isKeyBound('toggleShoulder', e) && !e.repeat) {
+                setShoulderSide(gameSettings.shoulderSide === 'right' ? 'left' : 'right');
+                return;
+            }
+            for (let index = 0; index < 8; index++) {
+                if (!isKeyBound(`hotbar${index + 1}`, e)) continue;
+                selectedHotbarIndex = index;
                 updateHotbar();
                 showItemNotification();
                 return;
             }
-            if (key === 'w' || key === 'arrowup') move.forward = true;
-            if (key === 's' || key === 'arrowdown') move.back = true;
-            if (key === 'a' || key === 'arrowleft') move.left = true;
-            if (key === 'd' || key === 'arrowright') move.right = true;
-            if (key === 'shift') {
+            if (isKeyBound('moveForward', e)) move.forward = true;
+            if (isKeyBound('moveBackward', e)) move.back = true;
+            if (isKeyBound('moveLeft', e)) move.left = true;
+            if (isKeyBound('moveRight', e)) move.right = true;
+            if (isKeyBound('sprint', e)) {
                 if (flying) move.flyDown = true;
                 else move.sprint = true;
             }
-            if (key === ' ' || key === 'spacebar') {
+            if (isKeyBound('jump', e)) {
                 if (flying) e.preventDefault();
                 jump();
             }
         });
 
         window.addEventListener('keyup', e => {
-            const key = e.key.toLowerCase();
-            if (key === 'w' || key === 'arrowup') move.forward = false;
-            if (key === 's' || key === 'arrowdown') move.back = false;
-            if (key === 'a' || key === 'arrowleft') move.left = false;
-            if (key === 'd' || key === 'arrowright') move.right = false;
-            if (key === 'shift') { move.sprint = false; move.flyDown = false; }
-            if (key === ' ' || key === 'spacebar') move.flyUp = false;
+            if (isKeyBound('moveForward', e)) move.forward = false;
+            if (isKeyBound('moveBackward', e)) move.back = false;
+            if (isKeyBound('moveLeft', e)) move.left = false;
+            if (isKeyBound('moveRight', e)) move.right = false;
+            if (isKeyBound('sprint', e)) { move.sprint = false; move.flyDown = false; }
+            if (isKeyBound('jump', e)) move.flyUp = false;
         });
 
         renderer.domElement.addEventListener('mousedown', e => {
@@ -4308,6 +4510,7 @@
             requestAnimationFrame(animate);
             if (roomSwitching) return;
             const dt = Math.min(clock.getDelta(), 0.05);
+            updateThirdPersonFollow(dt);
             playerSaveElapsed += dt;
             if (playerSaveElapsed >= 1) {
                 playerSaveElapsed = 0;

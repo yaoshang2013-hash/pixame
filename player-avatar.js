@@ -192,7 +192,6 @@
     const root = new THREE.Group();
     const pose = new THREE.Group();
     pose.position.y = 1;
-    pose.rotation.y = modelYawOffset;
     root.add(pose);
     const limbs = {};
     for (const [base, overlay] of [
@@ -298,7 +297,7 @@
       Math.max(0, -forwardMove) * 0.08 * walk +
       (transitionPose.pitch || 0);
     avatar.pose.rotation.x += (targetPitch - avatar.pose.rotation.x) * transition;
-    const targetYaw = modelYawOffset + cycle * 0.025 * (run + float) + Math.sin(avatar.phase * 0.35) * 0.018 * walk +
+    const targetYaw = cycle * 0.025 * (run + float) + Math.sin(avatar.phase * 0.35) * 0.018 * walk +
       strafeMove * 0.07 * (walk + run);
     avatar.pose.rotation.y += (targetYaw - avatar.pose.rotation.y) * transition;
     const targetRoll = cycle * (0.035 * run + 0.025 * walk) + Math.sin(avatar.phase * 0.5) * 0.04 * float -
@@ -352,5 +351,9 @@
     }
   }
 
-  return { create, update, waterPose: createPlayerAvatarFactory.waterPose };
+  function setFacingYaw(avatar, yaw) {
+    avatar.root.rotation.set(0, (Number.isFinite(yaw) ? yaw : 0) + modelYawOffset, 0);
+  }
+
+  return { create, setFacingYaw, update, waterPose: createPlayerAvatarFactory.waterPose };
 });

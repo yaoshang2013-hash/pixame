@@ -28,11 +28,14 @@ test('player skin is applied to separate animated body parts', () => {
   assert.equal(second.limbs.right_arm.rotation.x, 0);
 });
 
-test('player model keeps its 180-degree forward-facing correction during animation', () => {
+test('player model applies its 180-degree facing offset at the root', () => {
   const avatars = factory();
   const avatar = avatars.create();
+  avatars.setFacingYaw(avatar, 0.25);
+  assert.ok(Math.abs(avatar.root.rotation.y - (Math.PI + 0.25)) < 1e-8);
   avatars.update(avatar, { moving: true, forwardMove: 1 }, 0.05);
-  assert.ok(Math.abs(avatar.pose.rotation.y - Math.PI) < 0.1);
+  assert.ok(Math.abs(avatar.pose.rotation.y) < 0.1);
+  assert.ok(Math.abs(avatar.root.rotation.y - (Math.PI + 0.25)) < 1e-8);
 });
 
 test('model water expressions distinguish floating at the surface from underwater swimming', () => {

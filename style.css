@@ -175,9 +175,17 @@
         .settings-header h1 { margin: 0; color: #d3ead5; font: bold 16px monospace; letter-spacing: 0.1em; }
         .settings-close, #settings-reset { padding: 8px 10px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 8px; font: bold 11px monospace; cursor: pointer; }
         .settings-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 10px; padding: 12px 0; color: #e4eee5; border-top: 1px solid rgba(255,255,255,0.13); }
+        .settings-row[hidden] { display: none; }
         .settings-row output { color: #cceba8; font-variant-numeric: tabular-nums; }
         .settings-row input[type="range"] { grid-column: 1 / -1; width: 100%; margin: 3px 0; accent-color: #b7d9bb; }
         .settings-row select { grid-column: 1 / -1; min-height: 38px; padding: 8px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 8px; font: inherit; }
+        .keybindings-settings { padding: 12px 0; border-top: 1px solid rgba(255,255,255,0.13); }
+        .keybindings-settings summary { color: #d3ead5; font-weight: bold; cursor: pointer; }
+        .keybindings-settings p { color: #b9c9b9; font-size: 10px; }
+        #keybindings-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; max-height: 230px; overflow: auto; }
+        .keybinding-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 5px; font-size: 10px; }
+        .keybinding-row button { min-width: 54px; padding: 6px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 6px; font: bold 10px monospace; cursor: pointer; }
+        .keybinding-row button[aria-pressed="true"] { color: #101914; background: #cceba8; }
         .settings-footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
         #settings-message { min-height: 1em; color: #ffb0a5; text-align: right; }
         #mobile-mode-toggle { position: static; top: auto; left: auto; z-index: auto; transform: none; justify-self: end; padding: 8px 10px; color: #f0f4ee; background: var(--ui-control); border: 1px solid #000; border-radius: 8px; font: bold 10px monospace; cursor: pointer; }
@@ -186,4 +194,5 @@
         #mobile-joystick-knob { left: calc((var(--mobile-joystick-size) - var(--mobile-knob-size)) / 2); top: calc((var(--mobile-joystick-size) - var(--mobile-knob-size)) / 2); width: var(--mobile-knob-size); height: var(--mobile-knob-size); }
         #mobile-actions { right: var(--mobile-control-edge); bottom: var(--mobile-control-bottom); grid-template-columns: repeat(2, var(--mobile-button-size)); gap: var(--mobile-control-gap); }
         #mobile-actions button { min-height: var(--mobile-button-height); font-size: var(--mobile-control-font); }
+        #mobile-actions button[hidden] { display: none; }
         @media (max-width: 600px) { #settings-button { top: 10px; right: 10px; padding: 7px 9px; font-size: 9px; } .settings-panel { padding: 14px; } #mobile-mode-toggle { padding: 7px 9px; } }

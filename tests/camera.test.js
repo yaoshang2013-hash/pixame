@@ -6,7 +6,7 @@ const vm = require('node:vm');
 const THREE = require('three');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
-const start = source.indexOf('        function updatePerspectiveCamera()');
+const start = source.indexOf('        function updateThirdPersonFollow(dt)');
 const end = source.indexOf("        window.addEventListener('keydown'", start);
 assert.ok(start !== -1 && end !== -1);
 
@@ -19,10 +19,13 @@ function cameraContext(mode, pitch, yaw, obstructionDistance) {
   const context = vm.createContext({
     THREE, camera, viewCamera, playerAvatar: { root }, playerEyeHeight: 1.8,
     perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: mode,
+    thirdPersonYaw: yaw, previousPerspectiveMode: ['first', 'thirdBack', 'thirdFront'][mode],
+    shoulderOffset: 0.42, gameSettings: { shoulderSide: 'right' },
+    avatarFactory: { setFacingYaw() {} },
     heldItemModel: {}, playerInventoryOpen: false, workbenchOpen: false, furnaceOpen: false,
     blockPalette: { hidden: true }, document: { getElementById: () => ({ hidden: true }) },
     look: { pitch, yaw }, chunkSize: 32, terrainChunks: new Map([['0,-1', { group: {} }]]),
-    viewDirection: new THREE.Vector3(), viewTarget: new THREE.Vector3(),
+    viewDirection: new THREE.Vector3(), viewRight: new THREE.Vector3(), viewTarget: new THREE.Vector3(),
     viewRayDirection: new THREE.Vector3(),
     viewRaycaster: { set() {}, intersectObjects: () => obstructionDistance === undefined ? [] : [{ distance: obstructionDistance }] }
   });
@@ -49,4 +52,33 @@ test('first-person view hides the player model and returns the original camera',
   assert.equal(context.updatePerspectiveCamera(), context.camera);
   assert.equal(context.playerAvatar.root.visible, false);
   assert.equal(context.heldItemModel.visible, true);
+});
+
+test('third-person camera yaw smoothly follows the player while first person stays immediate', () => {
+  const thirdPerson = cameraContext(1, 0, 0);
+  thirdPerson.look.yaw = 1;
+  thirdPerson.updateThirdPersonFollow(0.1);
+  assert.ok(thirdPerson.thirdPersonYaw > 0 && thirdPerson.thirdPersonYaw < 1);
+
+  const firstPerson = cameraContext(0, 0, 0);
+  firstPerson.look.yaw = 1;
+  firstPerson.updateThirdPersonFollow(0.1);
+  assert.equal(firstPerson.thirdPersonYaw, 1);
+});
+
+test('shoulder selection offsets the camera target to opposite sides', () => {
+  const context = cameraContext(1, 0, 0);
+  context.updatePerspectiveCamera();
+  const rightShoulderX = context.viewTarget.x;
+  context.gameSettings.shoulderSide = 'left';
+  context.updatePerspectiveCamera();
+  assert.ok(Math.abs((rightShoulderX - context.viewTarget.x) - 0.84) < 1e-10);
+});
+
+test('aim camera matches the selected rendered perspective', () => {
+  const firstPerson = cameraContext(0, 0.2, 0.4);
+  assert.equal(firstPerson.getAimCamera(), firstPerson.camera);
+
+  const thirdPerson = cameraContext(2, 0.2, 0.4);
+  assert.equal(thirdPerson.getAimCamera(), thirdPerson.viewCamera);
 });

@@ -54,6 +54,15 @@ use JUMP and SPRINT for movement. Administrators can use DOWN while flying.
 In inventory, tap a stack and then a destination to move, swap or stack it.
 Tap a filled crafting slot to return its item.
 
+## Camera and keyboard controls
+
+Open SETTINGS to choose first-person, rear third-person or front third-person
+view, select the left or right shoulder, and customize the keyboard controls.
+In third person, the player turns with the view while the camera follows smoothly;
+the centered crosshair continues to target the block used for mining and placing.
+Touch players can switch shoulders with the on-screen button. Press C by default
+on a keyboard, or change that binding in SETTINGS.
+
 ## Player model
 
 The local and multiplayer avatars use `player.json` and the matching 64×64

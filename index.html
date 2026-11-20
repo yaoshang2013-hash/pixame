@@ -43,6 +43,7 @@
             <button type="button" id="mobile-jump">JUMP</button>
             <button type="button" id="mobile-mine">MINE</button>
             <button type="button" id="mobile-place">PLACE</button>
+            <button type="button" id="mobile-shoulder-toggle" hidden>SHOULDER: RIGHT</button>
             <button type="button" id="mobile-down" hidden>DOWN</button>
         </div>
     </div>
@@ -70,10 +71,22 @@
                     <option value="thirdFront">THIRD PERSON - FRONT</option>
                 </select>
             </label>
+            <label id="shoulder-side-row" class="settings-row" for="shoulder-side">
+                <span>THIRD-PERSON SHOULDER</span>
+                <select id="shoulder-side">
+                    <option value="right">RIGHT</option>
+                    <option value="left">LEFT</option>
+                </select>
+            </label>
             <div class="settings-row">
                 <span>TOUCH CONTROLS</span>
                 <button id="mobile-mode-toggle" type="button" aria-pressed="false">MOBILE: OFF</button>
             </div>
+            <details class="keybindings-settings">
+                <summary>KEYBOARD CONTROLS</summary>
+                <p>Click a key, then press a new one. Escape cancels.</p>
+                <div id="keybindings-list"></div>
+            </details>
             <div class="settings-footer">
                 <button id="settings-reset" type="button">RESET DEFAULTS</button>
                 <output id="settings-message" role="status"></output>
