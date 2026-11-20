@@ -6,9 +6,11 @@ const vm = require('node:vm');
 const THREE = require('three');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
+const aimStart = source.indexOf('        function findAimedBlock()');
+const aimEnd = source.indexOf('        let furnaceBreakPending = false;', aimStart);
 const start = source.indexOf('        function updateThirdPersonFollow(dt)');
 const end = source.indexOf("        window.addEventListener('keydown'", start);
-assert.ok(start !== -1 && end !== -1);
+assert.ok(aimStart !== -1 && aimEnd !== -1 && start !== -1 && end !== -1);
 
 function cameraContext(mode, pitch, yaw, obstructionDistance) {
   const camera = new THREE.PerspectiveCamera();
@@ -20,7 +22,8 @@ function cameraContext(mode, pitch, yaw, obstructionDistance) {
     THREE, camera, viewCamera, playerAvatar: { root }, playerEyeHeight: 1.8,
     perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: mode,
     thirdPersonYaw: yaw, previousPerspectiveMode: ['first', 'thirdBack', 'thirdFront'][mode],
-    shoulderOffset: 0.42, gameSettings: { shoulderSide: 'right' },
+    shoulderOffset: 0.42, thirdPersonAimHeight: 1.5,
+    gameSettings: { shoulderSide: 'right' },
     avatarFactory: { setFacingYaw() {} },
     heldItemModel: {}, playerInventoryOpen: false, workbenchOpen: false, furnaceOpen: false,
     blockPalette: { hidden: true }, document: { getElementById: () => ({ hidden: true }) },
@@ -70,6 +73,7 @@ test('shoulder selection offsets the camera target to opposite sides', () => {
   const context = cameraContext(1, 0, 0);
   context.updatePerspectiveCamera();
   const rightShoulderX = context.viewTarget.x;
+  assert.equal(context.viewTarget.y, 8 - 1.8 + 1.5);
   context.gameSettings.shoulderSide = 'left';
   context.updatePerspectiveCamera();
   assert.ok(Math.abs((rightShoulderX - context.viewTarget.x) - 0.84) < 1e-10);
@@ -81,4 +85,25 @@ test('aim camera matches the selected rendered perspective', () => {
 
   const thirdPerson = cameraContext(2, 0.2, 0.4);
   assert.equal(thirdPerson.getAimCamera(), thirdPerson.viewCamera);
+});
+
+test('third-person block aiming extends reach beyond the camera offset', () => {
+  const camera = new THREE.PerspectiveCamera();
+  const viewCamera = new THREE.PerspectiveCamera();
+  viewCamera.position.set(0, 1.5, -4.8);
+  const context = vm.createContext({
+    THREE, camera, viewCamera,
+    screenCenter: new THREE.Vector2(),
+    getAimCamera: () => viewCamera,
+    viewTarget: new THREE.Vector3(0, 1.5, 0),
+    blockReach: 5,
+    blockRaycaster: { setFromCamera() {}, intersectObjects: () => [] },
+    terrainChunks: new Map(), chunkSize: 32, worldBottomY: -64
+  });
+  vm.runInContext(source.slice(aimStart, aimEnd), context);
+  context.findAimedBlock();
+  assert.ok(Math.abs(context.blockRaycaster.far - 9.8) < 1e-10);
+  context.getAimCamera = () => camera;
+  context.findAimedBlock();
+  assert.equal(context.blockRaycaster.far, 5);
 });

@@ -2877,7 +2877,8 @@
         }
 
         const blockRaycaster = new THREE.Raycaster();
-        blockRaycaster.far = 5;
+        const blockReach = 5;
+        blockRaycaster.far = blockReach;
         const screenCenter = new THREE.Vector2(0, 0);
         const miningDurations = {grass: 0.45, dirt: 0.4, sand: 0.35, snow: 0.35, stone: 1.5, iron_ore: 1.5, wood: 0.8, leaves: 0.2};
         let aimedBlock = null;
@@ -3711,7 +3712,11 @@
         }
 
         function findAimedBlock() {
-            blockRaycaster.setFromCamera(screenCenter, getAimCamera());
+            const aimCamera = getAimCamera();
+            blockRaycaster.setFromCamera(screenCenter, aimCamera);
+            blockRaycaster.far = aimCamera === camera
+                ? blockReach
+                : aimCamera.position.distanceTo(viewTarget) + blockReach;
             const candidates = [];
             for (const chunk of terrainChunks.values()) {
                 const minX = chunk.chunkX * chunkSize;
@@ -4299,6 +4304,7 @@
         const viewTarget = new THREE.Vector3();
         const viewRayDirection = new THREE.Vector3();
         const viewRaycaster = new THREE.Raycaster();
+        const thirdPersonAimHeight = 1.5;
         function updateThirdPersonFollow(dt) {
             const perspectiveMode = perspectiveModes[perspectiveModeIndex];
             if (perspectiveMode === 'first' || previousPerspectiveMode === 'first') {
@@ -4334,7 +4340,7 @@
             viewRight.crossVectors(viewDirection, camera.up).normalize().multiplyScalar(-directionMultiplier);
             viewTarget.set(
                 camera.position.x,
-                camera.position.y - playerEyeHeight + 0.75,
+                camera.position.y - playerEyeHeight + thirdPersonAimHeight,
                 camera.position.z
             );
             viewTarget.addScaledVector(viewRight, shoulderOffset * (gameSettings.shoulderSide === 'left' ? -1 : 1));
