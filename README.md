@@ -58,8 +58,9 @@ Tap a filled crafting slot to return its item.
 
 Open SETTINGS to choose first-person, rear third-person or front third-person
 view, select the left or right shoulder, and customize the keyboard controls.
-In third person, the player turns with the view while the camera follows smoothly;
-the centered crosshair continues to target the block used for mining and placing.
+In third person, the camera trails above the selected shoulder as the player turns;
+the head follows the block under the centered crosshair, which is also used for
+mining and placing.
 Touch players can switch shoulders with the on-screen button. Press C by default
 on a keyboard, or change that binding in SETTINGS.
 

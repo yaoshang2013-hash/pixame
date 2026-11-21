@@ -337,12 +337,14 @@
     const sideLegSwing = cycle * (0.24 * walk + 0.3 * run) * strafeMove;
     const legSplay = 0.025 * walk + 0.05 * run + 0.12 * fall + 0.05 * flight;
     const headNod = idle * breath * 0.035 - run * 0.045 * Math.abs(cycle);
+    const aimYaw = Number.isFinite(state.aimYaw) ? state.aimYaw : 0;
+    const aimPitch = Number.isFinite(state.aimPitch) ? state.aimPitch : 0;
     for (const [name, x, y, z] of [
       ['right_arm', rightArmX, swim * Math.sin(avatar.phase + 0.5) * 0.12, rightArmZ],
       ['left_arm', leftArmX, -swim * Math.sin(avatar.phase + 0.5) * 0.12, leftArmZ],
       ['right_leg', rightLegX, 0, legSplay - sideLegSwing],
       ['left_leg', leftLegX, 0, -legSplay + sideLegSwing],
-      ['head', headNod, 0, 0]
+      ['head', headNod - aimPitch, aimYaw, 0]
     ]) {
       const limb = avatar.limbs[name];
       limb.rotation.x += (x - limb.rotation.x) * transition;

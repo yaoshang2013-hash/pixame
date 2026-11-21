@@ -38,6 +38,14 @@ test('player model applies its 180-degree facing offset at the root', () => {
   assert.ok(Math.abs(avatar.root.rotation.y - (Math.PI + 0.25)) < 1e-8);
 });
 
+test('player head follows the crosshair target independently of the body', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  avatars.update(avatar, {aimYaw: 0.4, aimPitch: 0.3}, 0.1);
+  assert.ok(avatar.limbs.head.rotation.y > 0);
+  assert.ok(avatar.limbs.head.rotation.x < 0);
+});
+
 test('model water expressions distinguish floating at the surface from underwater swimming', () => {
   const avatars = factory();
   assert.equal(avatars.waterPose(1, 0.2, 1.8, false), 'floating');

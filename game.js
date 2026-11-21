@@ -3754,7 +3754,7 @@
                 const normal = hit.face?.normal?.clone().transformDirection(mesh.matrixWorld);
                 if (!normal) continue;
                 normal.set(Math.round(normal.x), Math.round(normal.y), Math.round(normal.z));
-                return {x, y, z, type, normal};
+                return {x, y, z, type, normal, aimPoint: hit.point.clone()};
             }
             return null;
         }
@@ -4260,7 +4260,10 @@
         const look = { dragging: false, lastX: 0, lastY: 0, yaw: 0, pitch: 0 };
         let thirdPersonYaw = look.yaw;
         let previousPerspectiveMode = perspectiveModes[perspectiveModeIndex];
-        const shoulderOffset = 0.42;
+        const shoulderOffset = 0.85;
+        const shoulderHeightOffset = 0.35;
+        let localAimYaw = 0;
+        let localAimPitch = 0;
         const heldItemSwingDuration = 0.32;
         let heldItemSwingElapsed = heldItemSwingDuration;
         let heldItemWalkPhase = 0;
@@ -4297,6 +4300,25 @@
         function updateCameraRotation() {
             look.pitch = Math.max(-Math.PI / 2 + 0.1, Math.min(Math.PI / 2 - 0.1, look.pitch));
             camera.rotation.set(look.pitch, look.yaw, 0, 'YXZ');
+        }
+
+        function updateLocalAvatarAim(target) {
+            if (!target || !target.aimPoint) {
+                localAimYaw = 0;
+                localAimPitch = look.pitch;
+                return;
+            }
+            const dx = target.aimPoint.x - camera.position.x;
+            const dy = target.aimPoint.y - camera.position.y;
+            const dz = target.aimPoint.z - camera.position.z;
+            const horizontalDistance = Math.hypot(dx, dz);
+            if (horizontalDistance < 0.0001 && Math.abs(dy) < 0.0001) return;
+            const targetYaw = Math.atan2(-dx, -dz);
+            localAimYaw = Math.atan2(
+                Math.sin(targetYaw - look.yaw),
+                Math.cos(targetYaw - look.yaw)
+            );
+            localAimPitch = Math.atan2(dy, horizontalDistance);
         }
 
         const viewDirection = new THREE.Vector3();
@@ -4344,7 +4366,7 @@
                 camera.position.z
             );
             viewTarget.addScaledVector(viewRight, shoulderOffset * (gameSettings.shoulderSide === 'left' ? -1 : 1));
-            const viewDistance = 4.8;
+            const viewDistance = 4.4;
             viewRayDirection.copy(viewDirection).multiplyScalar(directionMultiplier);
             viewRaycaster.set(viewTarget, viewRayDirection);
             viewRaycaster.far = viewDistance;
@@ -4366,6 +4388,7 @@
                 safeDistance = Math.max(0.35, obstruction.distance - 0.3);
             }
             viewCamera.position.copy(viewTarget).addScaledVector(viewRayDirection, safeDistance);
+            viewCamera.position.y += shoulderHeightOffset;
             viewCamera.lookAt(viewTarget);
             viewCamera.updateMatrixWorld(true);
             return viewCamera;
@@ -4535,6 +4558,7 @@
                     miningActive = !!nextTarget && nextTarget.type !== 'bedrock';
                 }
                 aimedBlock = nextTarget;
+                updateLocalAvatarAim(nextTarget);
                 if (!miningActive) updateMiningCracks(null, 0);
                 targetScanElapsed = 0;
             }
@@ -4595,7 +4619,9 @@
                 floating,
                 flying: flying && isPlayerAdmin,
                 grounded,
-                verticalSpeed: velocityY
+                verticalSpeed: velocityY,
+                aimYaw: localAimYaw,
+                aimPitch: localAimPitch
             }, dt);
 
             if (moveDir.lengthSq() > 0) {
