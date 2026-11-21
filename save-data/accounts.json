@@ -1,0 +1,8 @@
+{
+  "tester_1": {
+    "id": "de3a5507-cc48-4476-a8f5-706707a9aafe",
+    "username": "tester_1",
+    "salt": "fa76e5b50c338b215048f4fa0b9758ef",
+    "passwordHash": "acb4eb957ab2590043e2b29782962b034f93616ed6094b69ba9e537a37f998322f097140c4039c105f19e7c03edb1aa3d11ee128a4146ea75574af35bd286540"
+  }
+}

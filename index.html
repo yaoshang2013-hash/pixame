@@ -94,7 +94,6 @@
         </section>
     </aside>
     <div id="selected-item-label" aria-live="polite" hidden></div>
-    <button id="inventory-toggle" type="button" aria-expanded="false" aria-controls="player-inventory">INVENTORY [E]</button>
     <aside id="block-palette" aria-label="Inventory and crafting" hidden>
         <div class="palette-header"><span>INVENTORY</span><button class="palette-close" type="button" aria-label="Close inventory">X</button></div>
         <div class="palette-tabs" role="tablist" aria-label="Inventory pages">
@@ -170,7 +169,10 @@
             <section class="inventory-hotbar"><h2 class="craft-section-title">HOTBAR</h2><div id="furnace-hotbar-slots" class="inventory-slot-grid"></div></section>
         </div>
     </aside>
-    <div id="hotbar" role="toolbar" aria-label="Inventory"></div>
+    <div id="hotbar-container">
+        <div id="hotbar" role="toolbar" aria-label="Hotbar"></div>
+        <button id="inventory-toggle" type="button" aria-label="Inventory" title="Inventory [E]" aria-expanded="false" aria-controls="player-inventory">...</button>
+    </div>
     <button id="admin-flight" type="button" hidden>FLIGHT [F]: OFF</button>
     <button id="admin-open" type="button" hidden>ADMIN</button>
     <aside id="admin-screen" aria-label="Administrator controls" hidden>

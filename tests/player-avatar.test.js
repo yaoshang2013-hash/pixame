@@ -28,6 +28,16 @@ test('player skin is applied to separate animated body parts', () => {
   assert.equal(second.limbs.right_arm.rotation.x, 0);
 });
 
+test('first-person arm reuses the player skin and sleeve overlay', () => {
+  const avatars = factory();
+  const arm = avatars.createFirstPersonArm();
+  assert.equal(arm.children.length, 2);
+  assert.ok(Math.abs(arm.position.length()) < 1e-8);
+  for (const mesh of arm.children) {
+    assert.equal(mesh.material.map.image.width, 64);
+  }
+});
+
 test('player model faces the same direction as the camera yaw', () => {
   const avatars = factory();
   const avatar = avatars.create();
@@ -150,10 +160,12 @@ test('jump takeoff has a brief anticipation followed by an extension', () => {
   avatars.update(avatar, { grounded: false, verticalSpeed: 4 }, 0.05);
   assert.equal(avatar.transitionName, 'jump-takeoff');
   assert.ok(avatar.transitionPose.squash < 0);
+  assert.ok(avatar.transitionPose.rightArmSplay < 0);
   assert.ok(avatar.pose.scale.y < 1);
 
   avatars.update(avatar, { grounded: false, verticalSpeed: 4 }, 0.1);
   assert.ok(avatar.transitionPose.squash > 0);
+  assert.ok(avatar.transitionPose.rightArmSplay > 0);
   assert.ok(avatar.pose.scale.y > 1);
 });
 
@@ -169,11 +181,84 @@ test('jumping, falling, and flying blend into distinct airborne poses', () => {
   }
   assert.ok(jumping.jumpStrength > 0.9);
   assert.ok(jumping.limbs.right_arm.rotation.x > 0.2);
+  assert.ok(jumping.limbs.right_arm.rotation.z > 0.4);
+  assert.ok(jumping.limbs.left_arm.rotation.z < -0.4);
+  assert.ok(jumping.limbs.right_leg.rotation.z > 0.2);
+  assert.ok(jumping.limbs.left_leg.rotation.z < -0.2);
   assert.ok(falling.fallStrength > 0.9);
-  assert.ok(falling.limbs.left_arm.rotation.z < -0.08);
+  assert.ok(falling.limbs.left_arm.rotation.z < -0.55);
+  assert.ok(falling.limbs.right_leg.rotation.z > 0.3);
   assert.ok(flying.flightStrength > 0.9);
   assert.equal(flying.jumpStrength, 0);
   assert.ok(flying.limbs.left_arm.rotation.z < -0.3);
+});
+
+test('airborne apex keeps the limbs spread as vertical speed approaches zero', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  for (let i = 0; i < 10; i++) avatars.update(avatar, { grounded: false, verticalSpeed: 0 }, 0.1);
+  assert.ok(avatar.airStrength > 0.9);
+  assert.ok(avatar.limbs.right_arm.rotation.z > 0.3);
+  assert.ok(avatar.limbs.left_leg.rotation.z < -0.2);
+});
+
+test('airborne legs scissor in opposite directions instead of hanging symmetrically', () => {
+  const avatars = factory();
+  const jumping = avatars.create();
+  const falling = avatars.create();
+  for (let i = 0; i < 3; i++) {
+    avatars.update(jumping, { grounded: false, verticalSpeed: 4 }, 0.1);
+    avatars.update(falling, { grounded: false, verticalSpeed: -4 }, 0.1);
+  }
+  assert.ok(jumping.limbs.right_leg.rotation.x > jumping.limbs.left_leg.rotation.x + 0.18);
+  assert.ok(falling.limbs.right_leg.rotation.x > falling.limbs.left_leg.rotation.x + 0.2);
+});
+
+test('falling limb wobble responds to fall speed and drop height', () => {
+  const avatars = factory();
+  function measureWobble(speed, groundDistance) {
+    const avatar = avatars.create();
+    const ranges = { arms: [Infinity, -Infinity], legs: [Infinity, -Infinity] };
+    for (let i = 0; i < 60; i++) {
+      avatars.update(avatar, { grounded: false, verticalSpeed: speed, groundDistance }, 0.05);
+      if (i < 12) continue;
+      const differences = [
+        avatar.limbs.right_arm.rotation.x - avatar.limbs.left_arm.rotation.x,
+        avatar.limbs.right_leg.rotation.x - avatar.limbs.left_leg.rotation.x
+      ];
+      for (let i = 0; i < differences.length; i++) {
+        const range = ranges[i === 0 ? 'arms' : 'legs'];
+        range[0] = Math.min(range[0], differences[i]);
+        range[1] = Math.max(range[1], differences[i]);
+      }
+    }
+    return {
+      arms: ranges.arms[1] - ranges.arms[0],
+      legs: ranges.legs[1] - ranges.legs[0]
+    };
+  }
+  const gentle = measureWobble(-0.8, 10);
+  const fast = measureWobble(-8, 10);
+  const shortDrop = measureWobble(-6, 3);
+  const highDrop = measureWobble(-6, 8);
+  assert.ok(gentle.arms > 0.03);
+  assert.ok(gentle.legs > 0.03);
+  assert.ok(fast.arms > gentle.arms * 2);
+  assert.ok(fast.legs > gentle.legs * 2);
+  assert.ok(shortDrop.arms < highDrop.arms * 0.3);
+  assert.ok(shortDrop.legs < highDrop.legs * 0.3);
+});
+
+test('falling braces before impact when the ground is close', () => {
+  const avatars = factory();
+  const nearGround = avatars.create();
+  const farGround = avatars.create();
+  for (let i = 0; i < 10; i++) {
+    avatars.update(nearGround, { grounded: false, verticalSpeed: -6, groundDistance: 0.05 }, 0.1);
+    avatars.update(farGround, { grounded: false, verticalSpeed: -6, groundDistance: 4 }, 0.1);
+  }
+  assert.ok(nearGround.pose.scale.y < farGround.pose.scale.y - 0.05);
+  assert.ok(nearGround.limbs.right_leg.rotation.x > farGround.limbs.right_leg.rotation.x + 0.2);
 });
 
 test('surface floating stays upright, bobs gently, and animates arms without swim strokes', () => {

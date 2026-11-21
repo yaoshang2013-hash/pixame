@@ -29,7 +29,8 @@ function cameraContext(mode, pitch, yaw, obstructionDistance) {
     thirdPersonAimHeight: 1.5, thirdPersonFaceHeight: 1.75,
     gameSettings: { shoulderSide: 'right' },
     avatarFactory: { setFacingYaw(avatar, yaw) { avatar.facingYaw = yaw; } },
-    heldItemModel: {}, playerInventoryOpen: false, workbenchOpen: false, furnaceOpen: false,
+    heldItemModel: { visible: false, children: [{}] }, heldItemArm: { visible: false },
+    playerInventoryOpen: false, workbenchOpen: false, furnaceOpen: false,
     blockPalette: { hidden: true }, document: { getElementById: () => ({ hidden: true }) },
     look: { pitch, yaw }, chunkSize: 32, terrainChunks: new Map([['0,-1', { group: {} }]]),
     viewDirection: new THREE.Vector3(), viewRight: new THREE.Vector3(), viewTarget: new THREE.Vector3(),
@@ -59,6 +60,11 @@ test('first-person view hides the player model and returns the original camera',
   assert.equal(context.updatePerspectiveCamera(), context.camera);
   assert.equal(context.playerAvatar.root.visible, false);
   assert.equal(context.heldItemModel.visible, true);
+  assert.equal(context.heldItemArm.visible, true);
+
+  const thirdPerson = cameraContext(1, 0, 0);
+  thirdPerson.updatePerspectiveCamera();
+  assert.equal(thirdPerson.heldItemArm.visible, false);
 });
 
 test('third-person camera yaw smoothly follows the player while first person stays immediate', () => {
@@ -71,6 +77,21 @@ test('third-person camera yaw smoothly follows the player while first person sta
   firstPerson.look.yaw = 1;
   firstPerson.updateThirdPersonFollow(0.1);
   assert.equal(firstPerson.thirdPersonYaw, 1);
+});
+
+test('camera turn blur is direction independent and increases with yaw speed', () => {
+  const context = cameraContext(0, 0, 0);
+  const still = context.cameraMotionBlurForYawDelta(0, 0.016);
+  const slow = context.cameraMotionBlurForYawDelta(0.01, 0.016);
+  const left = context.cameraMotionBlurForYawDelta(-0.1, 0.016);
+  const right = context.cameraMotionBlurForYawDelta(0.1, 0.016);
+  const fast = context.cameraMotionBlurForYawDelta(1, 0.016);
+  assert.equal(still, 0);
+  assert.equal(slow, 0);
+  assert.ok(left > 0);
+  assert.equal(left, right);
+  assert.ok(fast > right);
+  assert.equal(context.cameraMotionBlurForYawDelta(10, 0.016), 1.6);
 });
 
 test('shoulder selection offsets the camera target to opposite sides', () => {

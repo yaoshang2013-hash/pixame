@@ -271,8 +271,8 @@
         const sun = new THREE.DirectionalLight(0xffffff, 1.1);
         sun.position.set(5, 10, 5);
         sun.castShadow = true;
-        sun.shadow.mapSize.width = 1024;
-        sun.shadow.mapSize.height = 1024;
+        sun.shadow.mapSize.set(1024, 1024);
+        sun.shadow.autoUpdate = true;
         sun.shadow.camera.near = 0.5;
         sun.shadow.camera.far = 50;
         sun.shadow.camera.left = -15;
@@ -280,8 +280,6 @@
         sun.shadow.camera.top = 15;
         sun.shadow.camera.bottom = -15;
         sun.shadow.camera.updateProjectionMatrix();
-        sun.shadow.bias = -0.0001;
-        sun.shadow.normalBias = 0.02;
         scene.add(sun);
         scene.add(sun.target);
 
@@ -689,6 +687,10 @@
                     }
                     const lowMaterial = lowSparkMaterials.get(type);
                     if (lowMaterial) applyLowDetailPixel(lowMaterial, sampleOpaquePixel(image));
+                    if (heldItemModelType === type) {
+                        clearHeldItemModel();
+                        updateHeldItemModel();
+                    }
                 };
                 image.onerror = error => console.warn(`Failed to load Spark block texture ${definition.textureUrl}`, error);
                 image.src = definition.textureUrl;
@@ -842,7 +844,7 @@
             mesh.userData.worldPos = blockPosition;
             mesh.userData.blockType = blockType;
             mesh.userData.sparkBlockModel = true;
-            mesh.castShadow = false;
+            mesh.castShadow = true;
             mesh.receiveShadow = true;
             mesh.userData.blockShadowCaster = true;
             cubeGroup.add(mesh);
@@ -1212,6 +1214,7 @@
         heldItemModel.rotation.set(-0.2, -0.7, 1.35);
         heldItemModel.visible = false;
         heldItemCamera.add(heldItemModel);
+        let heldItemArm = null;
         let heldItemModelType = null;
 
         function getItemIconImage(type) {
@@ -1297,12 +1300,49 @@
 
         function updateHeldItemModel() {
             const selectedType = hotbarItems[selectedHotbarIndex]?.type;
-            if (!selectedType || placeableBlockTypes.has(selectedType) || blockIconTiles[selectedType]) {
+            if (!selectedType) {
                 clearHeldItemModel();
                 return;
             }
             if (heldItemModelType === selectedType && heldItemModel.children.length) return;
             clearHeldItemModel();
+            if (placeableBlockTypes.has(selectedType) || blockIconTiles[selectedType]) {
+                const geometry = blockGeo.clone();
+                let material;
+                if (sparkBlockDefinitions.has(selectedType)) {
+                    material = getSparkBlockMaterial(selectedType).clone();
+                } else {
+                    const textureSets = {
+                        grass: 'grass', dirt: 'dirt', sand: 'sand', snow: 'snow', wood: 'log',
+                        leaves: 'leaves', stone: 'stone', iron_ore: 'iron_ore', planks: 'planks',
+                        crafting_table: 'crafting_table', furnace: 'furnace'
+                    };
+                    const textureSet = textureSets[selectedType];
+                    if (textureSet) {
+                        applyTextureSet(geometry, textureSet);
+                    } else {
+                        const tiles = blockIconTiles[selectedType];
+                        if (!tiles) {
+                            geometry.dispose();
+                            return;
+                        }
+                        const sideTile = tiles.side;
+                        setFaceUV(geometry, 0, sideTile);
+                        setFaceUV(geometry, 1, sideTile);
+                        setFaceUV(geometry, 4, sideTile);
+                        setFaceUV(geometry, 5, tiles.right === undefined ? sideTile : tiles.right);
+                        setFaceUV(geometry, 2, tiles.top === undefined ? sideTile : tiles.top);
+                        setFaceUV(geometry, 3, tiles.bottom === undefined ? sideTile : tiles.bottom);
+                        geometry.attributes.uv.needsUpdate = true;
+                    }
+                    material = blockMat.clone();
+                }
+                const block = new THREE.Mesh(geometry, material);
+                block.scale.setScalar(0.26);
+                heldItemModel.add(block);
+                heldItemModelType = selectedType;
+                return;
+            }
             let image = getItemIconImage(selectedType);
             if (!image && itemImageFileNames[selectedType]) return;
             if (!image) {
@@ -1989,7 +2029,7 @@
             }
             mesh.instanceMatrix.needsUpdate = true;
             if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-            mesh.castShadow = false;
+            mesh.castShadow = castsShadow;
             mesh.receiveShadow = true;
             mesh.frustumCulled = false;
             targetGroup.add(mesh);
@@ -2702,6 +2742,9 @@
             avatarFactory = createPlayerAvatarFactory(THREE, model, texture);
             playerAvatar = avatarFactory.create();
             scene.add(playerAvatar.root);
+            heldItemArm = avatarFactory.createFirstPersonArm();
+            heldItemArm.scale.setScalar(0.82);
+            heldItemCamera.add(heldItemArm);
         }).catch(error => {
             console.error('Failed to load player model or skin:', error);
             roomMessage.textContent = 'Failed to load player model or skin.';
@@ -4314,17 +4357,35 @@
                 : 0;
             heldItemSwingElapsed = Math.min(heldItemSwingDuration, heldItemSwingElapsed + dt);
             const bob = Math.sin(heldItemWalkPhase) * heldItemWalkAmount;
-            const baseX = Math.min(0.36, 0.72 * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * camera.aspect * 0.72);
+            const fovScale = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2));
+            const itemDepth = 0.82 + swing * 0.035;
+            const itemHalfWidth = itemDepth * fovScale * camera.aspect;
+            const baseX = Math.max(0, Math.min(0.36, itemHalfWidth - 0.155));
             heldItemModel.position.set(
                 baseX + bob * 0.012 - swing * 0.075,
                 -0.3 + Math.abs(bob) * 0.012 - swing * 0.045,
-                -0.72 - swing * 0.035
+                -itemDepth
             );
             heldItemModel.rotation.set(
                 -0.2 - swing * 0.55,
                 -0.7 + bob * 0.035 + swing * 0.16,
                 1.35 + bob * 0.04 - swing * 0.35
             );
+            if (heldItemArm) {
+                const armDepth = 0.92;
+                const armHalfWidth = armDepth * fovScale * camera.aspect;
+                const armX = Math.max(0, Math.min(0.36, armHalfWidth - 0.125));
+                heldItemArm.position.set(
+                    armX + bob * 0.01 - swing * 0.04,
+                    -0.14 + Math.abs(bob) * 0.016 - swing * 0.025,
+                    -armDepth
+                );
+                heldItemArm.rotation.set(
+                    -0.12 - swing * 0.5,
+                    -0.08 + bob * 0.02 + swing * 0.12,
+                    -0.24 - swing * 0.25
+                );
+            }
         }
 
         function updateCameraRotation() {
@@ -4374,11 +4435,19 @@
             previousPerspectiveMode = perspectiveMode;
         }
 
+        function cameraMotionBlurForYawDelta(yawDelta, dt) {
+            const turnRate = Math.abs(yawDelta) / Math.max(dt, 0.001);
+            return Math.max(0, Math.min(1.6, (turnRate - 1.5) * 0.16));
+        }
+
         function updatePerspectiveCamera() {
             const perspectiveMode = perspectiveModes[perspectiveModeIndex];
             const isOverShoulder = perspectiveMode === 'thirdBack';
             const authScreen = document.getElementById('auth-screen');
-            heldItemModel.visible = perspectiveMode === 'first' && !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden && authScreen.hidden;
+            const showFirstPersonViewModel = perspectiveMode === 'first' &&
+                !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden && authScreen.hidden;
+            heldItemModel.visible = showFirstPersonViewModel && heldItemModel.children.length > 0;
+            if (heldItemArm) heldItemArm.visible = showFirstPersonViewModel;
             if (playerAvatar) {
                 playerAvatar.root.visible = perspectiveMode !== 'first';
                 playerAvatar.root.position.set(camera.position.x, camera.position.y - playerEyeHeight, camera.position.z);
@@ -4432,6 +4501,25 @@
             viewCamera.lookAt(viewTarget);
             viewCamera.updateMatrixWorld(true);
             return viewCamera;
+        }
+
+        let previousBlurYaw = null;
+        let cameraBlurAmount = 0;
+        function updateCameraMotionBlur(dt) {
+            const perspectiveMode = perspectiveModes[perspectiveModeIndex];
+            const yaw = perspectiveMode === 'first' ? look.yaw : thirdPersonYaw;
+            if (previousBlurYaw === null) previousBlurYaw = yaw;
+            const yawDelta = Math.atan2(
+                Math.sin(yaw - previousBlurYaw),
+                Math.cos(yaw - previousBlurYaw)
+            );
+            previousBlurYaw = yaw;
+            const targetBlur = cameraMotionBlurForYawDelta(yawDelta, dt);
+            const response = 1 - Math.exp(-(targetBlur > cameraBlurAmount ? 26 : 12) * dt);
+            cameraBlurAmount += (targetBlur - cameraBlurAmount) * response;
+            renderer.domElement.style.filter = cameraBlurAmount > 0.01
+                ? `blur(${cameraBlurAmount.toFixed(2)}px)`
+                : '';
         }
 
         function getAimCamera() {
@@ -4581,6 +4669,7 @@
             if (roomSwitching) return;
             const dt = Math.min(clock.getDelta(), 0.05);
             updateThirdPersonFollow(dt);
+            updateCameraMotionBlur(dt);
             playerSaveElapsed += dt;
             if (playerSaveElapsed >= 1) {
                 playerSaveElapsed = 0;
@@ -4661,6 +4750,7 @@
                 flying: flying && isPlayerAdmin,
                 grounded,
                 verticalSpeed: velocityY,
+                groundDistance: Number.isFinite(supportEyeY) ? Math.max(0, camera.position.y - supportEyeY) : null,
                 aimDirection: localAimDirection
             }, dt);
 
@@ -4745,7 +4835,7 @@
 
             updateSunForPlayer();
             renderer.render(scene, updatePerspectiveCamera());
-            if (heldItemModel.visible && heldItemModel.children.length) {
+            if ((heldItemArm && heldItemArm.visible) || (heldItemModel.visible && heldItemModel.children.length)) {
                 renderer.autoClear = false;
                 renderer.clearDepth();
                 renderer.render(heldItemScene, heldItemCamera);
