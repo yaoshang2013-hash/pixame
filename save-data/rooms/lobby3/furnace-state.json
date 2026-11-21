@@ -1,0 +1,55 @@
+{
+  "profiles": {
+    "de3a5507-cc48-4476-a8f5-706707a9aafe": {
+      "hotbarItems": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "backpackItems": [
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        null
+      ],
+      "selectedHotbarIndex": 0,
+      "position": {
+        "x": 202.50761994042887,
+        "y": 2.8,
+        "z": 98.66383645486711
+      }
+    }
+  },
+  "furnaces": {},
+  "revisions": {
+    "de3a5507-cc48-4476-a8f5-706707a9aafe": 3981
+  }
+}

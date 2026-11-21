@@ -280,7 +280,7 @@ test('Google sign-in verifies identity and retains its separate profile after re
   assert.deepEqual((await session.json()).profile, profile);
 });
 
-test('tree species and cave blocks survive profile and world saves', async t => {
+test('tree species, cave blocks and short grass survive profile and world saves', async t => {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'pixame-species-test-'));
   const port = await unusedPort();
   let server = await startServer(directory, port);
@@ -299,7 +299,7 @@ test('tree species and cave blocks survive profile and world saves', async t => 
     .flatMap(species => [`${species}_wood`, `${species}_leaves`]);
   const profile = {
     hotbarItems: [{ type: 'spruce_wood', count: 3 }, { type: 'cherry_leaves', count: 2 },
-      { type: 'packed_ice', count: 1 }, ...Array(5).fill(null)],
+      { type: 'packed_ice', count: 1 }, { type: 'short_grass', count: 3 }, ...Array(4).fill(null)],
     backpackItems: [...treeTypes.map(type => ({ type, count: 1 })), ...Array(27 - treeTypes.length).fill(null)],
     selectedHotbarIndex: 0, position: { x: 1, y: 10, z: 2 }
   };
@@ -314,8 +314,8 @@ test('tree species and cave blocks survive profile and world saves', async t => 
     return { socket, edits: (await edits)[0] };
   }
   const first = await connect(login.token);
-  const edits = [...treeTypes, 'packed_ice', 'moss_block', 'glow_mushroom', 'mushroom_stem', 'furnace']
-    .map((placedType, x) => ({ x, y: 2, z: 1, removed: false, placedType }));
+  const edits = [...treeTypes, 'packed_ice', 'moss_block', 'glow_mushroom', 'mushroom_stem', 'short_grass', 'furnace']
+    .map((placedType, x) => ({ x, y: 2, z: 1, removed: placedType === 'short_grass', placedType }));
   for (const edit of edits) assert.deepEqual(await first.socket.timeout(3000).emitWithAck('blockEdit', edit), { ok: true });
   const furnace = edits[edits.length - 1];
   const fuel = await post('/api/furnace', {
@@ -331,6 +331,7 @@ test('tree species and cave blocks survive profile and world saves', async t => 
   assert.equal(login.profile.hotbarItems[0].type, 'spruce_wood');
   assert.equal(login.profile.hotbarItems[1].type, 'cherry_leaves');
   assert.equal(login.profile.hotbarItems[2].type, 'packed_ice');
+  assert.equal(login.profile.hotbarItems[3].type, 'short_grass');
   assert.deepEqual(login.profile.backpackItems.slice(0, treeTypes.length).map(item => item.type), treeTypes);
   const restored = await connect(login.token);
   assert.deepEqual(restored.edits, edits);

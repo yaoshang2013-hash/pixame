@@ -26,6 +26,9 @@
   texture.generateMipmaps = false;
   texture.needsUpdate = true;
   const material = new THREE.MeshLambertMaterial({ map: texture, transparent: true, alphaTest: 0.5 });
+  const shadowOnlyMaterial = material.clone();
+  shadowOnlyMaterial.colorWrite = false;
+  shadowOnlyMaterial.depthWrite = false;
   const geometries = new Map();
   const transitionChannels = [
     'pitch', 'roll', 'bob', 'squash', 'rightArm', 'leftArm', 'rightLeg', 'leftLeg',
@@ -64,6 +67,16 @@
     keyframes: [
       { time: 0 },
       { time: 0.4, pitch: -0.1, rightArm: 0.14, leftArm: -0.14, rightLeg: -0.18, leftLeg: 0.18, bob: -0.018 },
+      { time: 1 }
+    ]
+  };
+  const sprintBrake = {
+    name: 'sprint-brake',
+    duration: 0.36,
+    keyframes: [
+      { time: 0 },
+      { time: 0.25, pitch: 0.28, squash: -0.08, rightArm: -0.45, leftArm: -0.3, rightLeg: 0.35, leftLeg: -0.3, bob: -0.035 },
+      { time: 0.6, pitch: 0.12, squash: -0.04, rightArm: -0.2, leftArm: -0.12, rightLeg: 0.2, leftLeg: -0.16, bob: -0.015 },
       { time: 1 }
     ]
   };
@@ -112,9 +125,13 @@
     'walk>idle': walkToStand,
     'walk>sprint': walkToSprint,
     'sprint>walk': sprintToWalk,
+    'sprint>brake': sprintBrake,
+    'walk>brake': sprintBrake,
+    'idle>brake': sprintBrake,
     'idle>jump': jumpTakeoff,
     'walk>jump': jumpTakeoff,
     'sprint>jump': jumpTakeoff,
+    'brake>jump': jumpTakeoff,
     'jump>fall': {
       name: 'jump-to-fall',
       duration: 0.24,
@@ -126,6 +143,13 @@
     },
     'fall>idle': landing,
     'fall>walk': landing,
+    'fall>sprint': landing,
+    'air>idle': landing,
+    'air>walk': landing,
+    'air>sprint': landing,
+    'jump>idle': landing,
+    'jump>walk': landing,
+    'jump>sprint': landing,
     'idle>swim': enteringWater,
     'walk>swim': enteringWater,
     'sprint>swim': enteringWater,
@@ -235,6 +259,7 @@
       root, pose, limbs, phase: 0, airPhase: 0, wasAirborne: false, wasFalling: false,
       fallStartGroundDistance: Infinity, mode: 'idle', activeTransition: null,
       transitionElapsed: 0, transitionName: null, transitionPose: {},
+      wasWallContact: false, wallImpactTime: 0, wasHeadHit: false, headImpactTime: 0,
       walkStrength: 0, sprintStrength: 0,
       jumpStrength: 0, fallStrength: 0, airStrength: 0, flightStrength: 0,
       miningStrength: 0, swimStrength: 0, floatStrength: 0
@@ -255,9 +280,21 @@
     const flying = !!state.flying && !swimming;
     const airborne = state.grounded === false && !swimming && !floating && !flying;
     const verticalSpeed = Number.isFinite(state.verticalSpeed) ? state.verticalSpeed : 0;
+    const wallContact = state.wallContact === 'hit' || state.wallContact === 'slide' ? state.wallContact : null;
+    const wallSide = Math.max(-1, Math.min(1, Number.isFinite(state.wallSide) ? state.wallSide : 0));
+    if (wallContact && !avatar.wasWallContact) avatar.wallImpactTime = 0.3;
+    avatar.wasWallContact = !!wallContact;
+    if (state.headHit && !avatar.wasHeadHit) avatar.headImpactTime = 0.35;
+    avatar.wasHeadHit = !!state.headHit;
+    avatar.wallImpactTime = Math.max(0, avatar.wallImpactTime - delta);
+    avatar.headImpactTime = Math.max(0, avatar.headImpactTime - delta);
+    const wallImpact = Math.sin(Math.PI * avatar.wallImpactTime / 0.3);
+    const headImpact = Math.sin(Math.PI * avatar.headImpactTime / 0.35);
+    const wallSlide = wallContact === 'slide' ? 1 : 0;
     const groundDistance = Number.isFinite(state.groundDistance) ? Math.max(0, state.groundDistance) : Infinity;
-    const sprinting = moving && !!state.sprinting && !swimming && !floating && !airborne;
-    const walking = moving && !sprinting && !swimming && !floating && !airborne;
+    const braking = !!state.braking && !swimming && !floating && !airborne && !flying;
+    const sprinting = moving && !!state.sprinting && !braking && !swimming && !floating && !airborne;
+    const walking = moving && !sprinting && !braking && !swimming && !floating && !airborne;
     const jumping = airborne && verticalSpeed > 0.35;
     const falling = airborne && verticalSpeed < -0.35;
     const fallSeverity = Math.max(0, Math.min(1, (-verticalSpeed - 0.35) / 8));
@@ -280,7 +317,7 @@
     avatar.wasAirborne = airborne;
     const mode = swimming ? 'swim' : floating ? 'float' : flying ? 'flight'
       : jumping ? 'jump' : falling ? 'fall' : airborne ? 'air'
-        : sprinting ? 'sprint' : walking ? 'walk' : 'idle';
+        : braking ? 'brake' : sprinting ? 'sprint' : walking ? 'walk' : 'idle';
     if (mode !== avatar.mode) {
       avatar.activeTransition = transitions[`${avatar.mode}>${mode}`] || null;
       avatar.transitionElapsed = 0;
@@ -313,9 +350,10 @@
 
     const walk = avatar.walkStrength;
     const run = avatar.sprintStrength;
-    const jump = avatar.jumpStrength;
-    const fall = avatar.fallStrength;
-    const air = avatar.airStrength;
+    const onGround = state.grounded !== false;
+    const jump = onGround ? 0 : avatar.jumpStrength;
+    const fall = onGround ? 0 : avatar.fallStrength;
+    const air = onGround ? 0 : avatar.airStrength;
     const flight = avatar.flightStrength;
     const swim = avatar.swimStrength;
     const float = avatar.floatStrength;
@@ -327,9 +365,10 @@
     const swimCycle = Math.sin(avatar.phase + Math.sin(avatar.phase * 2) * 0.28);
     const breath = Math.sin(avatar.phase * 0.45);
 
-    const targetPitch = -Math.PI / 2 * swim - 0.1 * float + 0.22 * run + 0.16 * jump + 0.08 * air - 0.1 * fall + 0.08 * flight +
+    const targetPitch = -Math.PI / 2 * swim - 0.1 * float - 0.12 * run + 0.16 * jump + 0.08 * air - 0.1 * fall + 0.08 * flight +
       0.12 * landingAnticipation +
       Math.max(0, -forwardMove) * 0.08 * walk +
+      -0.3 * wallImpact - 0.18 * headImpact +
       (transitionPose.pitch || 0);
     avatar.pose.rotation.x += (targetPitch - avatar.pose.rotation.x) * transition;
     const targetYaw = cycle * 0.025 * (run + float) + Math.sin(avatar.phase * 0.35) * 0.018 * walk +
@@ -337,6 +376,7 @@
     avatar.pose.rotation.y += (targetYaw - avatar.pose.rotation.y) * transition;
     const targetRoll = cycle * (0.035 * run + 0.025 * walk) + Math.sin(avatar.phase * 0.5) * 0.04 * float -
       strafeMove * 0.1 * (walk + run) +
+      wallSide * wallSlide * 0.2 +
       (transitionPose.roll || 0);
     avatar.pose.rotation.z += (targetRoll - avatar.pose.rotation.z) * transition;
     const bob = Math.abs(cycle) * (0.014 * walk + 0.026 * run) +
@@ -357,13 +397,15 @@
     const floatStroke = moving ? Math.sin(avatar.phase * 0.7) * 0.2 : Math.sin(avatar.phase * 0.5) * 0.04;
     const rightArmX = armSwing * (1 - swim) + swim * (-0.65 + swimArm * 0.62) +
       float * (-0.12 + floatStroke) + mining * (-1.05 + Math.sin(avatar.phase * 2) * 0.32) +
-      0.55 * jump + 0.18 * air - 0.45 * fall - 0.18 * flight +
+      0.4 * jump + 0.18 * air - 0.45 * fall - 0.18 * flight -
+      0.5 * wallImpact - 0.65 * headImpact - 0.22 * wallSlide * Math.max(0, wallSide) +
       armCounter * (0.1 * jump + 0.08 * air + fallWobble * fall) + sideArmSwing + (transitionPose.rightArm || 0);
     const leftArmX = -armSwing * (1 - swim) + swim * (-0.65 - swimArm * 0.62) +
-      float * (-0.12 - floatStroke) + 0.55 * jump + 0.18 * air - 0.45 * fall - 0.18 * flight -
+      float * (-0.12 - floatStroke) + 0.4 * jump + 0.18 * air - 0.45 * fall - 0.18 * flight -
+      0.5 * wallImpact - 0.65 * headImpact - 0.22 * wallSlide * Math.max(0, -wallSide) -
       armCounter * (0.1 * jump + 0.08 * air + fallWobble * fall) - sideArmSwing +
       (transitionPose.leftArm || 0);
-    const armSplay = 0.035 * walk + 0.07 * run + 0.06 * float + 0.55 * jump + 0.42 * air +
+    const armSplay = 0.035 * walk + 0.07 * run + 0.06 * float + 0.32 * jump + 0.42 * air +
       (0.56 + 0.16 * fallSeverity) * fall + 0.48 * flight +
       (moving ? 0 : 0.04 * swim);
     const armFlutter = airCycle * fallWobble * 0.5 * fall;
@@ -372,16 +414,20 @@
     const legKick = swim * (moving ? 0.38 : 0.16);
     const floatKick = float * (moving ? 0.22 : 0.08);
     const airLegKick = airCycle * (0.14 * jump + 0.12 * air + fallWobble * 1.4 * fall);
-    const rightLegX = cycle * (0.62 * walk + 0.95 * run) * forwardMove + Math.sin(avatar.phase + Math.PI) * legKick +
+    const forwardRun = run * Math.max(0, forwardMove);
+    const backwardRun = run * Math.min(0, forwardMove);
+    const rightRunLeg = (0.12 + Math.min(0, cycle) * 1.35) * forwardRun + 0.95 * cycle * backwardRun;
+    const leftRunLeg = (0.12 + Math.min(0, -cycle) * 1.35) * forwardRun - 0.95 * cycle * backwardRun;
+    const rightLegX = cycle * 0.62 * walk * forwardMove + rightRunLeg + Math.sin(avatar.phase + Math.PI) * legKick +
       Math.sin(avatar.phase * 0.6) * floatKick - 0.18 * jump + 0.04 * air + 0.22 * fall - 0.08 * flight +
       airLegKick + landingAnticipation * 0.42 +
       (transitionPose.rightLeg || 0);
-    const leftLegX = -cycle * (0.62 * walk + 0.95 * run) * forwardMove + Math.sin(avatar.phase) * legKick +
+    const leftLegX = -cycle * 0.62 * walk * forwardMove + leftRunLeg + Math.sin(avatar.phase) * legKick +
       Math.sin(avatar.phase * 0.6 + Math.PI) * floatKick - 0.18 * jump + 0.04 * air + 0.22 * fall - 0.08 * flight -
       airLegKick + landingAnticipation * 0.42 +
       (transitionPose.leftLeg || 0);
     const sideLegSwing = cycle * (0.24 * walk + 0.3 * run) * strafeMove;
-    const legSplay = 0.025 * walk + 0.05 * run + 0.3 * jump + 0.26 * air +
+    const legSplay = 0.025 * walk + 0.05 * run + 0.17 * jump + 0.26 * air +
       (0.32 + 0.12 * fallSeverity) * fall + 0.05 * flight;
     const legFlutter = armCounter * fallWobble * 0.35 * fall;
     const headNod = idle * breath * 0.035 - run * 0.045 * Math.abs(cycle);
@@ -405,7 +451,7 @@
       ['left_arm', leftArmX, -swim * Math.sin(avatar.phase + 0.5) * 0.12, leftArmZ],
       ['right_leg', rightLegX, 0, legSplay - sideLegSwing + legFlutter + (transitionPose.rightLegSplay || 0)],
       ['left_leg', leftLegX, 0, -legSplay + sideLegSwing - legFlutter - (transitionPose.leftLegSplay || 0)],
-      ['head', hasAimDirection ? aimPitch : headNod + aimPitch, aimYaw, 0]
+      ['head', (hasAimDirection ? aimPitch : headNod + aimPitch) - 0.35 * headImpact, aimYaw, 0]
     ]) {
       const limb = avatar.limbs[name];
       limb.rotation.x += (x - limb.rotation.x) * transition;
@@ -418,5 +464,13 @@
     avatar.root.rotation.set(0, Number.isFinite(yaw) ? yaw : 0, 0);
   }
 
-  return { create, createFirstPersonArm, setFacingYaw, update, waterPose: createPlayerAvatarFactory.waterPose };
+  function setShadowOnly(avatar, shadowOnly) {
+    if (avatar.shadowOnly === shadowOnly) return;
+    avatar.root.traverse(object => {
+      if (object.isMesh) object.material = shadowOnly ? shadowOnlyMaterial : material;
+    });
+    avatar.shadowOnly = shadowOnly;
+  }
+
+  return { create, createFirstPersonArm, setFacingYaw, setShadowOnly, update, waterPose: createPlayerAvatarFactory.waterPose };
 });

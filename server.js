@@ -102,7 +102,7 @@ app.use(express.static(__dirname));
 
 const treeSpecies = ['spruce', 'jungle', 'acacia', 'cherry', 'birch', 'dark_oak'];
 const treeWoodTypes = new Set(['wood', ...treeSpecies.map(species => `${species}_wood`)]);
-const blockTypes = new Set(['grass', 'dirt', 'sand', 'snow', 'stone', 'iron_ore', 'wood', 'leaves', 'planks', 'crafting_table', 'furnace',
+const blockTypes = new Set(['grass', 'short_grass', 'dirt', 'sand', 'snow', 'stone', 'iron_ore', 'wood', 'leaves', 'planks', 'crafting_table', 'furnace',
   'moss_block', 'packed_ice', 'glow_mushroom', 'mushroom_stem',
   ...treeSpecies.flatMap(species => [`${species}_wood`, `${species}_leaves`]), ...sparkBlockDefinitions.keys()]);
 const itemTypes = new Set([...blockTypes, 'iron_ingot', 'sticks', 'wooden_pickaxe', 'stone_pickaxe', 'wooden_axe', 'stone_axe', 'wooden_sword', 'stone_sword', 'torch']);

@@ -38,6 +38,21 @@ test('first-person arm reuses the player skin and sleeve overlay', () => {
   }
 });
 
+test('first-person avatar writes neither color nor depth but still casts shadows', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  const mesh = avatar.limbs.head.children[0];
+  const original = mesh.material;
+  avatars.setShadowOnly(avatar, true);
+  assert.equal(mesh.visible, true);
+  assert.equal(mesh.castShadow, true);
+  assert.equal(mesh.material.colorWrite, false);
+  assert.equal(mesh.material.depthWrite, false);
+  assert.equal(mesh.material.map, original.map);
+  avatars.setShadowOnly(avatar, false);
+  assert.equal(mesh.material, original);
+});
+
 test('player model faces the same direction as the camera yaw', () => {
   const avatars = factory();
   const avatar = avatars.create();
@@ -88,9 +103,25 @@ test('sprint has its own faster, leaning gait', () => {
     sprintLegPeak = Math.max(sprintLegPeak, Math.abs(sprint.limbs.left_leg.rotation.x));
   }
   assert.ok(sprint.sprintStrength > 0.9);
-  assert.ok(sprint.pose.rotation.x > walk.pose.rotation.x + 0.1);
+  assert.ok(sprint.pose.rotation.x < walk.pose.rotation.x - 0.08);
   assert.ok(sprint.phase > walk.phase * 1.4);
   assert.ok(sprintLegPeak > walkLegPeak);
+});
+
+test('running holds the leading leg upright and lifts the trailing leg behind', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  let rightLeading = false, leftLeading = false;
+  for (let i = 0; i < 400; i++) {
+    avatars.update(avatar, {moving: true, forwardMove: 1, sprinting: true, grounded: true}, 0.01);
+    if (i < 100) continue;
+    const cycle = Math.sin(avatar.phase);
+    const right = avatar.pose.rotation.x + avatar.limbs.right_leg.rotation.x;
+    const left = avatar.pose.rotation.x + avatar.limbs.left_leg.rotation.x;
+    if (cycle > 0.92 && Math.cos(avatar.phase) < 0 && Math.abs(right) < 0.18 && left < -0.65) rightLeading = true;
+    if (cycle < -0.92 && Math.cos(avatar.phase) > 0 && Math.abs(left) < 0.18 && right < -0.65) leftLeading = true;
+  }
+  assert.ok(rightLeading && leftLeading);
 });
 
 test('forward walking and sprinting swing limbs in the corrected direction', () => {
@@ -110,6 +141,19 @@ test('forward walking and sprinting swing limbs in the corrected direction', () 
     assert.ok(avatar.limbs.right_arm.rotation.z > 0);
     assert.ok(avatar.limbs.left_arm.rotation.z < 0);
   }
+});
+
+test('sprint braking has a distinct pose and stops when movement resumes', () => {
+  const avatars = factory();
+  const avatar = avatars.create();
+  for (let i = 0; i < 15; i++) avatars.update(avatar, {moving: true, sprinting: true, grounded: true}, 0.05);
+  avatars.update(avatar, {moving: false, braking: true, grounded: true}, 0.05);
+  assert.equal(avatar.mode, 'brake');
+  assert.equal(avatar.transitionName, 'sprint-brake');
+  assert.ok(avatar.transitionPose.pitch > 0);
+  avatars.update(avatar, {moving: true, sprinting: true, grounded: true}, 0.05);
+  assert.equal(avatar.mode, 'sprint');
+  assert.notEqual(avatar.transitionName, 'sprint-brake');
 });
 
 test('backward and sideways movement use distinct original gaits', () => {
@@ -154,6 +198,40 @@ test('state changes play explicit transition animations', () => {
   assert.ok(falling.transitionPose.bob > 0);
 });
 
+test('landing contracts limbs immediately even after a long fall', () => {
+  const avatars = factory();
+  for (const priorSpeed of [-6, 0, 4]) {
+    const avatar = avatars.create();
+    for (let i = 0; i < 20; i++) avatars.update(avatar, {grounded: false, verticalSpeed: priorSpeed}, 0.05);
+    const before = Math.abs(avatar.limbs.right_arm.rotation.z);
+    avatars.update(avatar, {grounded: true}, 0.05);
+    assert.equal(avatar.transitionName, 'fall-to-land');
+    assert.ok(Math.abs(avatar.limbs.right_arm.rotation.z) < before);
+    assert.ok(avatar.transitionPose.squash < 0);
+  }
+});
+
+test('wall impacts, wall sliding and head bumps trigger distinct reactions', () => {
+  const avatars = factory();
+  const idle = avatars.create();
+  const bump = avatars.create();
+  const head = avatars.create();
+  for (let i = 0; i < 3; i++) {
+    avatars.update(idle, {grounded: true}, 0.05);
+    avatars.update(bump, {grounded: true, wallContact: 'hit'}, 0.05);
+    avatars.update(head, {grounded: false, verticalSpeed: 0, headHit: true}, 0.05);
+  }
+  assert.ok(bump.pose.rotation.x < idle.pose.rotation.x - 0.1);
+  assert.ok(head.limbs.head.rotation.x < -0.1);
+  assert.ok(head.limbs.right_arm.rotation.x < -0.1);
+  const left = avatars.create(), right = avatars.create();
+  for (let i = 0; i < 12; i++) {
+    avatars.update(left, {moving: true, wallContact: 'slide', wallSide: -1}, 0.05);
+    avatars.update(right, {moving: true, wallContact: 'slide', wallSide: 1}, 0.05);
+  }
+  assert.ok(right.pose.rotation.z > left.pose.rotation.z + 0.2);
+});
+
 test('jump takeoff has a brief anticipation followed by an extension', () => {
   const avatars = factory();
   const avatar = avatars.create();
@@ -181,10 +259,10 @@ test('jumping, falling, and flying blend into distinct airborne poses', () => {
   }
   assert.ok(jumping.jumpStrength > 0.9);
   assert.ok(jumping.limbs.right_arm.rotation.x > 0.2);
-  assert.ok(jumping.limbs.right_arm.rotation.z > 0.4);
-  assert.ok(jumping.limbs.left_arm.rotation.z < -0.4);
-  assert.ok(jumping.limbs.right_leg.rotation.z > 0.2);
-  assert.ok(jumping.limbs.left_leg.rotation.z < -0.2);
+  assert.ok(jumping.limbs.right_arm.rotation.z > 0.2);
+  assert.ok(jumping.limbs.left_arm.rotation.z < -0.2);
+  assert.ok(jumping.limbs.right_leg.rotation.z > 0.1);
+  assert.ok(jumping.limbs.left_leg.rotation.z < -0.1);
   assert.ok(falling.fallStrength > 0.9);
   assert.ok(falling.limbs.left_arm.rotation.z < -0.55);
   assert.ok(falling.limbs.right_leg.rotation.z > 0.3);

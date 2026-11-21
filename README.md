@@ -72,7 +72,13 @@ The local and multiplayer avatars use `player.json` and the matching 64×64
 idle, walking, sprinting, jumping, falling, admin flight, mining, underwater
 swimming and surface floating, including directional backward and strafe gaits
 with counter-swinging limbs for remote players. Landings use a squash, rebound
-and recovery sequence, while jumps use a brief anticipation and takeoff extension.
+and recovery sequence without retaining the falling spread, while jumps use a
+brief anticipation and takeoff extension. Wall impacts, sliding along walls
+and hitting a ceiling trigger separate stylized reactions. The first-person
+body stays invisible but still casts a shadow.
+Sprinting leans forward with the leading leg upright and the trailing leg raised.
+Releasing movement after a ground sprint plays a braking pose and slides up to
+half a block, stopping at walls or when movement resumes.
 Minecraft-specific
 transitions such as standing-to-walking, walking-to-sprinting, falling-to-landing,
 and entering or leaving water have dedicated original transition clips.
@@ -82,9 +88,9 @@ does not contain their separate textures.
 
 ## Distant terrain
 
-Faraway blocks use the top-left pixel of their side texture as a single color.
-Grass retains its biome tint; textures with a transparent corner use their first
-visible pixel. Nearby blocks keep their full textures and models.
+Complete block and cave detail is kept near the player. Surface textures remain
+full resolution within a 10-chunk radius, use 4×4-pixel textures out to 25
+chunks, and switch to a coarse terrain mesh out to 256 chunks.
 
 ## Biomes
 
@@ -95,6 +101,8 @@ as well as the existing plains, rainforest, savanna, tundra and desert.
 Temperature and humidity tint grass and foliage. Trees have varied shapes and
 branches; different species drop and place their own wood and leaves. Existing
 `wood` and `leaves` saves remain oak.
+Short grass uses the texture pack's `short_grass.png`, grows naturally on grass,
+and can be collected and replanted on solid ground. It does not block movement.
 
 Natural underground caves include mossy, icy and glowing mushroom areas.
 Frozen regions generate icy caves underneath, and some cave floors contain

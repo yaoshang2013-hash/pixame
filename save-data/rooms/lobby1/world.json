@@ -1,0 +1,58 @@
+[
+  {
+    "x": -27,
+    "y": 2,
+    "z": 26,
+    "removed": true,
+    "placedType": "grass"
+  },
+  {
+    "x": -40,
+    "y": 21,
+    "z": 9,
+    "removed": true,
+    "placedType": "spruce_leaves"
+  },
+  {
+    "x": -41,
+    "y": 15,
+    "z": 17,
+    "removed": true,
+    "placedType": "grass"
+  },
+  {
+    "x": -3,
+    "y": 18,
+    "z": -13,
+    "removed": true,
+    "placedType": "grass"
+  },
+  {
+    "x": -4,
+    "y": 18,
+    "z": -15,
+    "removed": false,
+    "placedType": null
+  },
+  {
+    "x": 22,
+    "y": 14,
+    "z": -19,
+    "removed": true,
+    "placedType": "spruce_wood"
+  },
+  {
+    "x": 22,
+    "y": 13,
+    "z": -19,
+    "removed": true,
+    "placedType": "spruce_wood"
+  },
+  {
+    "x": 22,
+    "y": 12,
+    "z": -19,
+    "removed": true,
+    "placedType": "spruce_wood"
+  }
+]

@@ -21,6 +21,7 @@ function cameraContext(mode, pitch, yaw, obstructionDistance) {
   camera.rotation.set(pitch, yaw, 0, 'YXZ');
   const viewCamera = new THREE.PerspectiveCamera();
   const root = new THREE.Group();
+  root.add(new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshBasicMaterial()));
   const context = vm.createContext({
     THREE, camera, viewCamera, playerAvatar: { root }, playerEyeHeight: 1.8,
     perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: mode,
@@ -28,7 +29,10 @@ function cameraContext(mode, pitch, yaw, obstructionDistance) {
     shoulderOffset: 0.85, shoulderHeightOffset: 0.35,
     thirdPersonAimHeight: 1.5, thirdPersonFaceHeight: 1.75,
     gameSettings: { shoulderSide: 'right' },
-    avatarFactory: { setFacingYaw(avatar, yaw) { avatar.facingYaw = yaw; } },
+    avatarFactory: {
+      setFacingYaw(avatar, yaw) { avatar.facingYaw = yaw; },
+      setShadowOnly(avatar, value) { avatar.shadowOnly = value; }
+    },
     heldItemModel: { visible: false, children: [{}] }, heldItemArm: { visible: false },
     playerInventoryOpen: false, workbenchOpen: false, furnaceOpen: false,
     blockPalette: { hidden: true }, document: { getElementById: () => ({ hidden: true }) },
@@ -55,16 +59,62 @@ test('third-person cameras remain aimed at the player at all vertical angles', (
   }
 });
 
-test('first-person view hides the player model and returns the original camera', () => {
+test('first-person view selects shadow-only avatar rendering', () => {
   const context = cameraContext(0, 0.7, 0.8);
   assert.equal(context.updatePerspectiveCamera(), context.camera);
-  assert.equal(context.playerAvatar.root.visible, false);
+  assert.equal(context.playerAvatar.root.visible, true);
+  assert.equal(context.playerAvatar.shadowOnly, true);
   assert.equal(context.heldItemModel.visible, true);
   assert.equal(context.heldItemArm.visible, true);
 
   const thirdPerson = cameraContext(1, 0, 0);
   thirdPerson.updatePerspectiveCamera();
+  assert.equal(thirdPerson.playerAvatar.shadowOnly, false);
   assert.equal(thirdPerson.heldItemArm.visible, false);
+});
+
+test('sprint braking travels half a block with smooth, frame-independent deceleration', () => {
+  const start = source.indexOf('        const speed = 4;');
+  const end = source.indexOf('        const jumpSpeed =', start);
+  assert.ok(start !== -1 && end !== -1);
+  const context = vm.createContext({});
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.stepBrake = advanceSprintBrake;`, context);
+  for (const step of [0.005, 0.016, 0.05]) {
+    const brake = {elapsed: 0};
+    const distances = [];
+    while (brake.elapsed < 0.36) distances.push(context.stepBrake(brake, step));
+    assert.ok(Math.abs(distances.reduce((a, b) => a + b, 0) - 0.5) < 1e-10);
+    assert.ok(distances[0] > distances[distances.length - 1]);
+  }
+});
+
+test('horizontal movement remains blocked by walls while sliding along them', () => {
+  const start = source.indexOf('        function movePlayerHorizontally(');
+  const end = source.indexOf("        window.addEventListener('mouseup'", start);
+  assert.ok(start !== -1 && end !== -1);
+  const context = vm.createContext({canMoveTo: position => position.x <= 0.8});
+  vm.runInContext(source.slice(start, end), context);
+  const position = new THREE.Vector3(0.7, 2, 0);
+  const result = context.movePlayerHorizontally(position, new THREE.Vector3(0.2, 0, 0.3));
+  assert.equal(result.blockedX, true);
+  assert.equal(result.blockedZ, false);
+  assert.deepEqual(position.toArray(), [0.7, 2, 0.3]);
+});
+
+test('remote players receive sprint braking state', () => {
+  const start = source.indexOf('        function updateRemotePlayer(');
+  const end = source.indexOf("        socket.on('state'", start);
+  assert.ok(start !== -1 && end !== -1);
+  const context = vm.createContext({
+    THREE, playerEyeHeight: 1.8, avatarFactory: {setFacingYaw() {}}
+  });
+  vm.runInContext(source.slice(start, end), context);
+  const remote = {avatar: {root: new THREE.Group()}, lastPosition: new THREE.Vector3()};
+  context.updateRemotePlayer(remote, {x: 0.2, y: 1.8, z: 0, braking: true});
+  assert.equal(remote.animation.moving, true);
+  assert.equal(remote.animation.braking, true);
+  context.updateRemotePlayer(remote, {x: 0.2, y: 1.8, z: 0, braking: false});
+  assert.equal(remote.animation.braking, false);
 });
 
 test('third-person camera yaw smoothly follows the player while first person stays immediate', () => {

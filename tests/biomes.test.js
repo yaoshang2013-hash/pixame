@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
+const THREE = require('three');
 const biomes = require('../biomes.js');
 const caves = require('../caves.js');
 
@@ -15,6 +16,105 @@ test('biome regions span multiple 32-block chunks, including negative coordinate
     counts.set(region.name, (counts.get(region.name) || 0) + 1);
   }
   for (const count of counts.values()) assert.ok(count >= 4);
+});
+
+test('terrain LOD covers 10 high, 25 medium and 256 far chunk radii', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
+  const start = source.indexOf('        const fullDetailRadius = 80;');
+  const end = source.indexOf('        function removeTerrainChunk(', start);
+  assert.ok(start !== -1 && end !== -1);
+  const projection = { updateProjectionMatrix() {} };
+  const context = vm.createContext({chunkSize: 32, camera: {...projection}, viewCamera: {...projection}});
+  vm.runInContext(`${source.slice(start, end)}\nglobalThis.lodApi = {terrainLodAtDistance, selectTerrainChunkLods};`, context);
+  const distances = [0, 80, 80.1, 320, 320.1, 800, 800.1, 8192, 8192.1];
+  const candidates = distances.map((distance, index) => ({key: String(index), chunkX: index, chunkZ: 0, distance}));
+  const selected = context.lodApi.selectTerrainChunkLods(candidates);
+  assert.deepEqual(Array.from(selected, chunk => chunk.lod),
+    ['high', 'high', 'surface', 'surface', 'medium', 'medium']);
+  assert.equal(context.lodApi.terrainLodAtDistance(800.1), 'far');
+  assert.equal(context.lodApi.terrainLodAtDistance(8192), 'far');
+  assert.equal(context.lodApi.terrainLodAtDistance(8192.1), null);
+});
+
+test('medium terrain atlas downsamples every texture tile to 4 by 4', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
+  const start = source.indexOf('        const mediumTile = 4;');
+  const end = source.indexOf('        updateMediumAtlas();', start);
+  assert.ok(start !== -1 && end !== -1);
+  const draws = [];
+  const canvas = {
+    getContext: () => ({clearRect() {}, drawImage: (...args) => draws.push(args)})
+  };
+  class CanvasTexture { constructor(image) { this.image = image; } }
+  const original = {};
+  const context = vm.createContext({
+    document: {createElement: () => canvas}, THREE: {CanvasTexture, NearestFilter: 1},
+    atlasTileCount: 3, tile: 16, blockTexture: {image: original}
+  });
+  vm.runInContext(`${source.slice(start, end)}\nupdateMediumAtlas();`, context);
+  assert.equal(canvas.width, 12);
+  assert.equal(canvas.height, 4);
+  assert.deepEqual(draws, [
+    [original, 0, 0, 16, 16, 0, 0, 4, 4],
+    [original, 16, 0, 16, 16, 4, 0, 4, 4],
+    [original, 32, 0, 16, 16, 8, 0, 4, 4]
+  ]);
+});
+
+test('terrain builds are batched and discard superseded pending chunks', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
+  const start = source.indexOf('        function removeTerrainChunk(');
+  const end = source.indexOf('        function updateTerrainChunks()', start);
+  assert.ok(start !== -1 && end !== -1);
+  const scheduled = [];
+  const built = [];
+  let time = 0;
+  const context = vm.createContext({
+    pendingTerrainChunks: [], terrainBuildScheduled: false, terrainChunks: new Map(),
+    activeWaterCells: new Set(), activeTreeBlocks: new Set(),
+    floorGroup: {add() {}, remove() {}},
+    disposeSparkModelGeometries() {}, updateBlockShadowCasting() {},
+    performance: {now: () => (time += 10)},
+    requestAnimationFrame: callback => scheduled.push(callback),
+    buildTerrainChunk: (x, z, lod, caveDetail) => {
+      built.push(x);
+      return {group: {traverse() {}}, waterKeys: [], treeKeys: [], lod, caveDetail};
+    }
+  });
+  vm.runInContext(source.slice(start, end), context);
+  const candidate = x => ({key: `${x},0`, chunkX: x, chunkZ: 0, lod: 'medium', caveDetail: false});
+  context.pendingTerrainChunks = [candidate(1), candidate(2)];
+  context.buildPendingTerrainChunks();
+  assert.deepEqual(built, [1]);
+  assert.equal(scheduled.length, 1);
+  context.pendingTerrainChunks = [candidate(3)];
+  scheduled.shift()();
+  assert.deepEqual(built, [1, 3]);
+  assert.equal(scheduled.length, 0);
+});
+
+test('terrain visibility retains nearby shadow casters and culls off-screen chunks', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
+  const start = source.indexOf('        const terrainFrustum =');
+  const end = source.indexOf('        function updateBlockShadowCasting(', start);
+  assert.ok(start !== -1 && end !== -1);
+  const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1000);
+  camera.position.set(0, 2, 0);
+  const chunk = (x, z, lod, min, max) => ({
+    chunkX: x, chunkZ: z, lod, group: {}, bounds: new THREE.Box3(new THREE.Vector3(...min), new THREE.Vector3(...max))
+  });
+  const front = chunk(0, -2, 'medium', [-1, 0, -64], [1, 5, -63]);
+  const behind = chunk(0, 2, 'medium', [-1, 0, 63], [1, 5, 64]);
+  const nearbyShadow = chunk(0, 0, 'high', [-1, 0, 1], [1, 5, 2]);
+  const context = vm.createContext({
+    THREE, camera, chunkSize: 32, blockShadowRadius: 24,
+    terrainChunks: new Map([['front', front], ['behind', behind], ['nearby', nearbyShadow]])
+  });
+  vm.runInContext(source.slice(start, end), context);
+  context.updateTerrainVisibility(camera);
+  assert.equal(front.group.visible, true);
+  assert.equal(behind.group.visible, false);
+  assert.equal(nearbyShadow.group.visible, true);
 });
 
 test('all requested biomes appear with distinct temperatures and appropriate tree species', () => {
@@ -130,43 +230,53 @@ test('water immersion follows the water blocks and ignores placed blocks', () =>
   assert.equal(context.waterSurfaceAt(1.5, 0.3, 0.5), null);
 });
 
-test('water block meshes retain depth and skip occupied cells', () => {
+test('placed short grass does not create solid terrain or raise its height', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
+  const solidStart = source.indexOf('        function isSolidBlockAt(');
+  const solidEnd = source.indexOf('        function disposeSparkModelGeometries(', solidStart);
+  const heightStart = source.indexOf('        function sampleTerrainHeight(');
+  const heightEnd = source.indexOf('        function isWaterAt(', heightStart);
+  assert.ok(solidStart !== -1 && solidEnd !== -1 && heightStart !== -1 && heightEnd !== -1);
+  const placedBlocks = new Map([['1,4,2', 'short_grass']]);
+  const context = vm.createContext({
+    blockKey: (x, y, z) => `${x},${y},${z}`, terrainColumnKey: (x, z) => `${x},${z}`,
+    placedBlocks, placedColumns: new Map([['1,2', new Map([[4, 'short_grass']])]]),
+    removedBlocks: new Set(['1,4,2']), activeWaterCells: new Set(), activeTreeBlocks: new Set(),
+    worldBottomY: -32, sampleTerrainColumn: () => ({height: 4}), isWaterAt: () => false
+  });
+  vm.runInContext(source.slice(solidStart, solidEnd) + source.slice(heightStart, heightEnd), context);
+  assert.equal(context.isSolidBlockAt(1, 4, 2), false);
+  assert.equal(context.sampleTerrainHeight(1, 2), 4);
+  placedBlocks.set('1,4,2', 'stone');
+  context.placedColumns.get('1,2').set(4, 'stone');
+  assert.equal(context.isSolidBlockAt(1, 4, 2), true);
+  assert.equal(context.sampleTerrainHeight(1, 2), 5);
+});
+
+test('water mesh hides internal faces and preserves exposed sides and occupied cells', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
   const start = source.indexOf('        function addWaterInstances(');
   const end = source.indexOf('        function createBlockMesh(', start);
   assert.ok(start !== -1 && end !== -1);
-  class Vector {
-    constructor(x = 0, y = 0, z = 0) { this.set(x, y, z); }
-    set(x, y, z) { this.x = x; this.y = y; this.z = z; }
-  }
-  class Matrix {
-    compose(position, rotation, scale) { this.record = { y: position.y, height: scale.y }; }
-  }
-  class Mesh {
-    constructor(geometry, material, count) {
-      this.count = count;
-      this.instanceMatrix = {};
-      this.records = [];
-    }
-    setMatrixAt(index, matrix) { this.records[index] = { ...matrix.record }; }
-  }
   const placedBlocks = new Map([['1,0,0', 'stone']]);
   const context = vm.createContext({
-    THREE: { Vector3: Vector, Matrix4: Matrix, Quaternion: class {}, InstancedMesh: Mesh },
-    waterGeo: {}, waterMaterial: {}, placedBlocks, blockKey: (x, y, z) => `${x},${y},${z}`
+    THREE, waterMaterial: {}, placedBlocks, blockKey: (x, y, z) => `${x},${y},${z}`
   });
   vm.runInContext(source.slice(start, end), context);
   const group = { add(mesh) { this.mesh = mesh; } };
   context.addWaterInstances(group, [[0, -1, 0, 2], [1, -1, 0, 2], [2, -21, 0]]);
-  assert.deepEqual(group.mesh.records, [
-    { y: 0, height: 2 }, { y: -0.5, height: 1 }, { y: -20.5, height: 1 }
-  ]);
+  assert.equal(group.mesh.geometry.index.count, (6 * 4 - 2 * 2) * 6);
+  assert.deepEqual(Array.from(group.mesh.userData.blockRecords, row => Array.from(row)),
+    [[0, -1, 0, 2], [1, -1, 0, 1], [2, -21, 0, 1]]);
+  const connected = {add(mesh) { this.mesh = mesh; }};
+  context.addWaterInstances(connected, [[0, 0, 0, 1]], (x, y, z) => x === 1 && y === 0 && z === 0);
+  assert.equal(connected.mesh.geometry.index.count, 5 * 6);
 });
 
 test('grass and leaves use climate colors while cherry foliage keeps its texture color', () => {
   const source = fs.readFileSync(path.join(__dirname, '..', 'game.js'), 'utf8');
   const start = source.indexOf('        function sampleClimateColor(');
-  const end = source.indexOf('        const lowDetailSideTiles', start);
+  const end = source.indexOf('        const waterCanvas', start);
   assert.ok(start !== -1 && end !== -1);
   const map = { width: 16, height: 16, data: new Uint8ClampedArray(16 * 16 * 4) };
   for (let y = 0; y < 16; y++) {
@@ -203,7 +313,9 @@ test('natural trees are rendered and tracked in both near and distant chunks', (
     add(child) { this.children.push(child); }
   }
   const context = vm.createContext({
-    THREE: { Group }, chunkSize: 32, worldBottomY: -32, waterSpreadRadius: 0,
+    THREE: {...THREE, Group}, camera: { updateProjectionMatrix() {} }, viewCamera: { updateProjectionMatrix() {} },
+    roomId: 'test', roomSeeds: {test: 1},
+    chunkSize: 32, worldBottomY: -32, waterSpreadRadius: 0,
     removedBlocks: new Set(), placedBlocks: new Map(), placedColumns: new Map(),
     sparkBlockDefinitions: new Map(),
     PixameCaves: caves,
@@ -213,7 +325,7 @@ test('natural trees are rendered and tracked in both near and distant chunks', (
     blockKey: (x, y, z) => `${x},${y},${z}`,
     terrainColumnKey: (x, z) => `${x},${z}`,
     sampleTerrainColumn: () => column,
-    grassBiomeColor: () => [1, 1, 1], lowGrassColor: () => [1, 1, 1],
+    grassBiomeColor: () => [1, 1, 1],
     foliageBiomeColor: () => [1, 1, 1],
     addGroupedBlock: (map, type, block) => {
       if (!map.has(type)) map.set(type, []);
@@ -221,7 +333,7 @@ test('natural trees are rendered and tracked in both near and distant chunks', (
     },
     addBlockInstances: (group, blocks, geometry, material, type) => {
       if (!blocks.length) return undefined;
-      const mesh = { userData: { blockType: type, blockRecords: blocks }, count: blocks.length };
+      const mesh = { userData: { blockType: type, blockRecords: blocks }, count: blocks.length, geometry, material };
       group.add(mesh);
       return mesh;
     },
@@ -231,15 +343,17 @@ test('natural trees are rendered and tracked in both near and distant chunks', (
     woodGeo: {}, leavesGeo: {}, leavesMaterial: {}, blockMat: {}, planksGeo: {},
     craftingTableGeo: {}, furnaceGeo: {},
     treeGeometries: { spruce: { log: {}, leaves: {} } },
-    lowTreeMaterials: { spruce: { wood: {}, leaves: {} } },
-    lowDetailMaterials: { grass: {}, wood: {}, leaves: {}, sand: {} }
+    caveGeometries: {}, mediumBlockMat: {}, mediumLeavesMaterial: {},
+    mediumGrassMaterials: {}, mediumGrassOverlayMaterial: {},
+    shortGrassGeometry: {}, shortGrassMaterial: {}, mediumShortGrassMaterial: {}
   });
   vm.runInContext(source.slice(start, end), context);
-  for (const lod of ['high', 'low']) {
+  for (const lod of ['high', 'surface', 'medium']) {
     const chunk = context.buildTerrainChunk(0, 0, lod);
     assert.ok(chunk.treeKeys.length > 0);
     const wood = chunk.group.children.find(mesh => mesh.userData.blockType === 'spruce_wood');
     assert.ok(wood);
+    assert.equal(wood.material, lod === 'medium' ? context.mediumBlockMat : context.blockMat);
     assert.ok(chunk.group.children.some(mesh => mesh.userData.foliageSpecies === 'spruce'));
     const records = new Set(wood.userData.blockRecords.map(([x, y, z]) => `${x},${y},${z}`));
     assert.ok(wood.userData.blockRecords.some(([x, y, z]) => y > 3 && !records.has(`${x},${y - 1},${z}`)));
@@ -251,13 +365,28 @@ test('natural trees are rendered and tracked in both near and distant chunks', (
     assert.ok(chunk.group.children.some(mesh => mesh.userData.blockType === context.treeBlockType(species, 'wood')));
     assert.ok(chunk.group.children.some(mesh => mesh.userData.blockType === context.treeBlockType(species, 'leaves')));
   }
+  column.treeSpecies = null;
+  const naturalGrass = context.buildTerrainChunk(0, 0, 'medium').group.children
+    .find(mesh => mesh.userData.blockType === 'short_grass');
+  assert.ok(naturalGrass?.count > 0);
+  assert.equal(naturalGrass.material, context.mediumShortGrassMaterial);
+  const [grassX, grassY, grassZ] = naturalGrass.userData.blockRecords[0];
+  context.removedBlocks.add(`${grassX},${grassY},${grassZ}`);
+  const afterRemoval = context.buildTerrainChunk(0, 0, 'medium').group.children
+    .find(mesh => mesh.userData.blockType === 'short_grass');
+  assert.ok(!afterRemoval.userData.blockRecords.some(([x, y, z]) => x === grassX && y === grassY && z === grassZ));
+  context.placedBlocks.set(`${grassX},${grassY},${grassZ}`, 'short_grass');
+  context.placedColumns.set(`${grassX},${grassZ}`, new Map([[grassY, 'short_grass']]));
+  const replanted = context.buildTerrainChunk(0, 0, 'medium').group.children
+    .find(mesh => mesh.userData.blockType === 'short_grass');
+  assert.ok(replanted.userData.blockRecords.some(([x, y, z]) => x === grassX && y === grassY && z === grassZ));
   const iceCave = { floor: -21, ceiling: -15, biome: 'ice', water: true };
   context.caveProfileAt = () => iceCave;
   context.caveGeometries = { packed_ice: {}, moss_block: {}, mushroom_stem: {}, glow_mushroom: {} };
   context.glowMushroomMaterial = {};
   context.undergroundBlockType = () => 'stone';
   context.addWaterInstances = (group, cells) => {
-    if (cells.some(([, y]) => y < -4)) group.add({ userData: { blockType: 'cave_water' }, count: cells.length });
+    if (cells.some(([, y]) => y < -4)) group.add({ userData: { blockType: 'cave_water', blockRecords: cells }, count: cells.length });
   };
   const iceChunk = context.buildTerrainChunk(0, 0, 'high', true);
   assert.ok(iceChunk.group.children.some(mesh => mesh.userData.blockType === 'packed_ice'));

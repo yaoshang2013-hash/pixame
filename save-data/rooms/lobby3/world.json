@@ -1,0 +1,51 @@
+[
+  {
+    "x": -3,
+    "y": 11,
+    "z": -10,
+    "removed": true,
+    "placedType": "spruce_wood"
+  },
+  {
+    "x": 133,
+    "y": 13,
+    "z": -20,
+    "removed": true,
+    "placedType": "sand"
+  },
+  {
+    "x": 143,
+    "y": 0,
+    "z": -15,
+    "removed": true,
+    "placedType": "grass"
+  },
+  {
+    "x": 159,
+    "y": 2,
+    "z": 90,
+    "removed": true,
+    "placedType": null
+  },
+  {
+    "x": 286,
+    "y": 1,
+    "z": 72,
+    "removed": true,
+    "placedType": "grass"
+  },
+  {
+    "x": 285,
+    "y": 2,
+    "z": 68,
+    "removed": false,
+    "placedType": null
+  },
+  {
+    "x": 285,
+    "y": 2,
+    "z": 69,
+    "removed": false,
+    "placedType": null
+  }
+]
