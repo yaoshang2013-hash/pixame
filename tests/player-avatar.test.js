@@ -41,12 +41,17 @@ test('player model faces the same direction as the camera yaw', () => {
   assert.ok(Math.abs(avatar.root.rotation.y - yaw) < 1e-8);
 });
 
-test('player head follows the crosshair target independently of the body', () => {
+test('player head follows the crosshair target with matching pitch and yaw', () => {
   const avatars = factory();
-  const avatar = avatars.create();
-  avatars.update(avatar, {aimYaw: 0.4, aimPitch: 0.3}, 0.1);
-  assert.ok(avatar.limbs.head.rotation.y > 0);
-  assert.ok(avatar.limbs.head.rotation.x < 0);
+  const lookingUp = avatars.create();
+  avatars.update(lookingUp, {aimYaw: 0.4, aimPitch: 0.3}, 0.1);
+  assert.ok(lookingUp.limbs.head.rotation.y > 0);
+  assert.ok(lookingUp.limbs.head.rotation.x > 0);
+
+  const lookingDown = avatars.create();
+  avatars.update(lookingDown, {aimYaw: -0.4, aimPitch: -0.3}, 0.1);
+  assert.ok(lookingDown.limbs.head.rotation.y < 0);
+  assert.ok(lookingDown.limbs.head.rotation.x < 0);
 });
 
 test('model water expressions distinguish floating at the surface from underwater swimming', () => {
