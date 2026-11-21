@@ -61,7 +61,7 @@ view, select the left or right shoulder, and customize the keyboard controls.
 In rear third person, the camera trails above the selected shoulder and the
 head follows the block under the centered crosshair, which is also used for
 mining and placing. Front third person centers the player's face without
-shoulder offset or head aiming.
+shoulder offset or head aiming, and keeps the player facing the camera.
 Touch players can switch shoulders with the on-screen button. Press C by default
 on a keyboard, or change that binding in SETTINGS.
 

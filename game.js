@@ -4262,8 +4262,7 @@
         let previousPerspectiveMode = perspectiveModes[perspectiveModeIndex];
         const shoulderOffset = 0.85;
         const shoulderHeightOffset = 0.35;
-        let localAimYaw = 0;
-        let localAimPitch = 0;
+        let localAimDirection = null;
         const heldItemSwingDuration = 0.32;
         let heldItemSwingElapsed = heldItemSwingDuration;
         let heldItemWalkPhase = 0;
@@ -4304,26 +4303,23 @@
 
         function updateLocalAvatarAim(target) {
             if (perspectiveModes[perspectiveModeIndex] !== 'thirdBack') {
-                localAimYaw = 0;
-                localAimPitch = 0;
+                localAimDirection = null;
                 return;
             }
-            if (!target || !target.aimPoint) {
-                localAimYaw = 0;
-                localAimPitch = look.pitch;
-                return;
-            }
-            const dx = target.aimPoint.x - camera.position.x;
-            const dy = target.aimPoint.y - camera.position.y;
-            const dz = target.aimPoint.z - camera.position.z;
-            const horizontalDistance = Math.hypot(dx, dz);
-            if (horizontalDistance < 0.0001 && Math.abs(dy) < 0.0001) return;
-            const targetYaw = Math.atan2(-dx, -dz);
-            localAimYaw = Math.atan2(
-                Math.sin(targetYaw - look.yaw),
-                Math.cos(targetYaw - look.yaw)
-            );
-            localAimPitch = Math.atan2(dy, horizontalDistance);
+            const cosPitch = Math.cos(look.pitch);
+            const dx = target && target.aimPoint
+                ? target.aimPoint.x - camera.position.x
+                : -Math.sin(look.yaw) * cosPitch;
+            const dy = target && target.aimPoint
+                ? target.aimPoint.y - camera.position.y
+                : Math.sin(look.pitch);
+            const dz = target && target.aimPoint
+                ? target.aimPoint.z - camera.position.z
+                : -Math.cos(look.yaw) * cosPitch;
+            const length = Math.hypot(dx, dy, dz);
+            localAimDirection = length > 0.0001
+                ? {x: dx / length, y: dy / length, z: dz / length}
+                : null;
         }
 
         const viewDirection = new THREE.Vector3();
@@ -4355,7 +4351,10 @@
             if (playerAvatar) {
                 playerAvatar.root.visible = perspectiveMode !== 'first';
                 playerAvatar.root.position.set(camera.position.x, camera.position.y - playerEyeHeight, camera.position.z);
-                avatarFactory.setFacingYaw(playerAvatar, look.yaw);
+                avatarFactory.setFacingYaw(
+                    playerAvatar,
+                    perspectiveMode === 'thirdFront' ? thirdPersonYaw : look.yaw
+                );
             }
             if (perspectiveMode === 'first') return camera;
 
@@ -4631,8 +4630,7 @@
                 flying: flying && isPlayerAdmin,
                 grounded,
                 verticalSpeed: velocityY,
-                aimYaw: localAimYaw,
-                aimPitch: localAimPitch
+                aimDirection: localAimDirection
             }, dt);
 
             if (moveDir.lengthSq() > 0) {

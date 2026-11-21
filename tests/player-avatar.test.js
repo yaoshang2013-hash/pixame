@@ -41,17 +41,19 @@ test('player model faces the same direction as the camera yaw', () => {
   assert.ok(Math.abs(avatar.root.rotation.y - yaw) < 1e-8);
 });
 
-test('player head follows the crosshair target with matching pitch and yaw', () => {
+test('player head rotates toward the crosshair target in world space', () => {
   const avatars = factory();
-  const lookingUp = avatars.create();
-  avatars.update(lookingUp, {aimYaw: 0.4, aimPitch: 0.3}, 0.1);
-  assert.ok(lookingUp.limbs.head.rotation.y > 0);
-  assert.ok(lookingUp.limbs.head.rotation.x < 0);
-
-  const lookingDown = avatars.create();
-  avatars.update(lookingDown, {aimYaw: -0.4, aimPitch: -0.3}, 0.1);
-  assert.ok(lookingDown.limbs.head.rotation.y < 0);
-  assert.ok(lookingDown.limbs.head.rotation.x > 0);
+  const avatar = avatars.create();
+  const targetDirection = new THREE.Vector3(-0.2, 0.3, -1).normalize();
+  avatars.setFacingYaw(avatar, 0.4);
+  for (let frame = 0; frame < 40; frame++) {
+    avatars.update(avatar, {aimDirection: targetDirection}, 0.1);
+  }
+  const headDirection = new THREE.Vector3(0, 0, -1)
+    .applyQuaternion(avatar.limbs.head.quaternion)
+    .applyQuaternion(avatar.pose.quaternion)
+    .applyQuaternion(avatar.root.quaternion);
+  assert.ok(headDirection.dot(targetDirection) > 0.9999);
 });
 
 test('model water expressions distinguish floating at the surface from underwater swimming', () => {
