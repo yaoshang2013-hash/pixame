@@ -20,18 +20,25 @@
         <span id="room-message" role="status"></span>
     </div>
     <div id="room-switching" hidden>Saving room...</div>
-    <aside id="auth-screen" aria-label="Account sign in">
-        <div class="auth-card">
-            <h1 id="auth-title">SIGN IN</h1>
-            <p id="auth-description">Sign in to restore this player's saved inventory and position.</p>
-            <form id="auth-form" class="auth-form">
-                <label>USERNAME<input id="auth-username" name="username" autocomplete="username" minlength="3" maxlength="24" required></label>
-                <label>PASSWORD<input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
-                <button id="auth-submit" type="submit">SIGN IN</button>
-            </form>
-            <button id="auth-switch" class="auth-switch" type="button">Need an account? Sign up</button>
-            <div id="google-sign-in"></div>
-            <div id="auth-message" role="alert"></div>
+    <aside id="auth-screen" aria-label="Pixame main menu">
+        <div class="title-screen-layout">
+            <header class="title-screen-brand">
+                <p class="title-screen-kicker">WELCOME TO</p>
+                <h1>PIXAME</h1>
+                <p class="title-screen-tagline">EXPLORE / BUILD / SURVIVE</p>
+            </header>
+            <div class="auth-card">
+                <h2 id="auth-title">SIGN IN</h2>
+                <p id="auth-description">Sign in to start and restore this player's saved inventory and position.</p>
+                <form id="auth-form" class="auth-form">
+                    <label>USERNAME<input id="auth-username" name="username" autocomplete="username" minlength="3" maxlength="24" required></label>
+                    <label>PASSWORD<input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required></label>
+                    <button id="auth-submit" type="submit">START</button>
+                </form>
+                <button id="auth-switch" class="auth-switch" type="button">Need an account? Sign up</button>
+                <div id="google-sign-in"></div>
+                <div id="auth-message" role="alert"></div>
+            </div>
         </div>
     </aside>
     <div id="crosshair" aria-hidden="true"></div>

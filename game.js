@@ -1528,8 +1528,8 @@
         function setAuthMode(isSignUp) {
             signingUp = isSignUp;
             authTitle.textContent = isSignUp ? 'CREATE ACCOUNT' : 'SIGN IN';
-            authDescription.textContent = isSignUp ? 'Create a local server account to keep this player across restarts.' : 'Sign in to restore this player’s saved inventory and position.';
-            authSubmit.textContent = isSignUp ? 'CREATE ACCOUNT' : 'SIGN IN';
+            authDescription.textContent = isSignUp ? 'Create a local server account to keep this player across restarts.' : 'Sign in to start and restore this player’s saved inventory and position.';
+            authSubmit.textContent = isSignUp ? 'CREATE ACCOUNT' : 'START';
             authSwitch.textContent = isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up';
             authPassword.autocomplete = isSignUp ? 'new-password' : 'current-password';
             authMessage.textContent = '';
@@ -4394,7 +4394,17 @@
         }
 
         function updateLocalAvatarAim(target) {
-            if (perspectiveModes[perspectiveModeIndex] !== 'thirdBack') {
+            const perspectiveMode = perspectiveModes[perspectiveModeIndex];
+            if (perspectiveMode === 'thirdFront') {
+                const cosPitch = Math.cos(look.pitch);
+                localAimDirection = {
+                    x: -Math.sin(thirdPersonYaw) * cosPitch,
+                    y: Math.sin(look.pitch),
+                    z: -Math.cos(thirdPersonYaw) * cosPitch
+                };
+                return;
+            }
+            if (perspectiveMode !== 'thirdBack') {
                 localAimDirection = null;
                 return;
             }

@@ -79,20 +79,27 @@
         .furnace-slot { width: 52px; height: 52px; }
         .furnace-slot .item-icon { width: 44px; height: 44px; }
         #furnace-status { min-height: 2em; color: #fff5ba; text-align: center; }
-        #auth-screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(5, 10, 12, 0.7); z-index: 20; }
+        #auth-screen { position: fixed; inset: 0; display: grid; place-items: center; padding: 18px; background: linear-gradient(rgba(7,12,10,0.2), rgba(7,12,10,0.38)), url('/assets/images/title-screen.png') center / cover no-repeat; background-color: #0b1410; z-index: 20; }
         #auth-screen[hidden] { display: none; }
+        .title-screen-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px); align-items: center; gap: clamp(28px, 6vw, 88px); width: min(1080px, 100%); }
+        .title-screen-brand { color: #f0f4ee; text-shadow: 0 3px 14px rgba(0,0,0,0.8); }
+        .title-screen-brand p { margin: 0; font: bold 14px monospace; letter-spacing: 0.24em; }
+        .title-screen-brand h1 { margin: 12px 0; color: #dcf4c2; font: 900 clamp(56px, 8vw, 112px)/0.95 monospace; letter-spacing: 0.06em; }
+        .title-screen-brand .title-screen-tagline { color: #eff8e6; font-size: 12px; letter-spacing: 0.18em; }
         #room-picker { position: fixed; top: 14px; left: 14px; z-index: 21; display: flex; align-items: center; gap: 8px; padding: 8px; color: #eaf2e5; background: #192720; border: 1px solid #becbb9; border-radius: 6px; font: bold 12px monospace; }
         #room-select { padding: 5px; color: #eaf2e5; background: #0b1213; border: 1px solid #5e7066; font: 12px monospace; }
         #room-message { max-width: 260px; color: #ffb0a5; }
         #room-switching { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; color: white; background: rgba(5, 10, 12, 0.8); font: bold 16px monospace; }
         #room-switching[hidden] { display: none; }
         .auth-card { width: min(360px, calc(100vw - 80px)); padding: 20px; color: #eaf2e5; background: linear-gradient(135deg, rgba(15,25,28,0.99), rgba(31,49,42,0.98)); border: 2px solid #becbb9; border-radius: 14px; outline: 2px solid rgba(14,22,24,0.82); box-shadow: 0 16px 42px rgba(0,0,0,0.58); font: 16px monospace; }
-        .auth-card h1 { margin: 0 0 8px; color: #cceba8; font-size: 16px; letter-spacing: 0.1em; }
+        .auth-card h1, .auth-card h2 { margin: 0 0 8px; color: #cceba8; font-size: 16px; letter-spacing: 0.1em; }
         .auth-card p { margin: 0 0 14px; color: #b9c5bc; line-height: 1.45; }
         .auth-form { display: grid; gap: 9px; }
         .auth-form label { display: grid; gap: 4px; color: #cceba8; font-size: 16px; }
         .auth-form input { min-width: 0; padding: 9px; color: #f4f7f2; background: #0b1213; border: 1px solid #5e7066; border-radius: 6px; font: 16px monospace; }
         .auth-form button { padding: 10px; color: #182018; background: #cceba8; border: 1px solid #e9f7d8; border-radius: 6px; font: bold 16px monospace; cursor: pointer; }
+        #auth-submit { color: #101914; background: rgba(195,225,202,0.95); border-color: #e9f7d8; letter-spacing: 0.14em; }
+        #auth-submit:hover { background: #e9f7d8; }
         .auth-switch { margin-top: 12px; color: #cceba8; background: transparent; border: 0; font: 16px monospace; cursor: pointer; text-decoration: underline; }
         #google-sign-in { margin-top: 14px; min-height: 40px; }
         #auth-message { min-height: 16px; margin-top: 10px; color: #ffb0a5; font: 16px monospace; }
@@ -131,7 +138,7 @@
         :root { --ui-surface: rgba(25, 30, 32, 0.68); --ui-control: rgba(20, 25, 27, 0.58); --ui-border: rgba(0, 0, 0, 0.94); }
         #block-palette, .inventory-window, .auth-card, #hotbar { background: var(--ui-surface); border: 2px solid var(--ui-border); border-radius: 14px; outline: none; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
         #room-picker, #inventory-toggle, #mobile-mode-toggle, #admin-flight, #admin-open { background: var(--ui-surface); border: 2px solid var(--ui-border); border-radius: 10px; }
-        #player-inventory, #workbench-screen, #furnace-screen, #admin-screen, #auth-screen { background: rgba(0,0,0,0.3); }
+        #player-inventory, #workbench-screen, #furnace-screen, #admin-screen { background: rgba(0,0,0,0.3); }
         #mobile-joystick { background: var(--ui-control); border-color: var(--ui-border); }
         #mobile-joystick-knob { background: rgba(235,245,235,0.65); border: 1px solid var(--ui-border); }
         #mobile-actions button, .palette-tab, .palette-close, .palette-block, .recipe-card,
@@ -161,6 +168,7 @@
         @keyframes slot-select { 0% { transform: scale(0.82); } 65% { transform: scale(1.12); } 100% { transform: scale(1); } }
         @keyframes palette-open { 0% { transform: translateX(-50%) translateY(24px) scale(0.82); opacity: 0; } 70% { transform: translateX(-50%) translateY(-3px) scale(1.025); opacity: 1; } 100% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } }
         @keyframes item-notification { 0% { transform: translateX(-50%) translateY(9px) scale(0.82); opacity: 0; } 15%, 75% { transform: translateX(-50%) translateY(0) scale(1); opacity: 1; } 100% { transform: translateX(-50%) translateY(-5px) scale(0.96); opacity: 0; } }
+        @media (max-width: 760px) { #auth-screen { align-items: start; overflow-y: auto; } .title-screen-layout { grid-template-columns: 1fr; justify-items: center; gap: 20px; padding: 20px 0; } .title-screen-brand { text-align: center; } .title-screen-brand h1 { font-size: clamp(48px, 12vw, 72px); } .title-screen-brand p { font-size: 11px; } }
         @media (max-width: 600px) { #hotbar-container { bottom: 10px; gap: 3px; } #inventory-toggle { flex-basis: 39px; width: 39px; height: 43px; font-size: 16px; } #block-palette { bottom: 66px; padding: 9px; } .palette-grid { gap: 3px; } .palette-block { min-height: 64px; font-size: 7px; } .palette-block .item-icon { width: 31px; height: 31px; } .craft-layout { grid-template-columns: 1fr; } .recipe-list { max-height: 120px; } #player-inventory, #workbench-screen { padding: 8px; } .inventory-window { padding: 10px; } .inventory-content { grid-template-columns: 1fr 128px; gap: 8px; } .inventory-craft-grid { grid-template-columns: repeat(2, 42px); } .inventory-craft-grid .craft-cell { width: 42px; height: 42px; } .inventory-craft-grid .craft-cell .item-icon { width: 36px; height: 36px; } .workbench-main { grid-template-columns: 1fr 44px 1fr; gap: 5px; } .workbench-craft-grid { grid-template-columns: repeat(3, 38px); gap: 4px; } .workbench-craft-grid .craft-cell { width: 38px; height: 38px; } .workbench-craft-grid .craft-cell .item-icon { width: 32px; height: 32px; } #hotbar { gap: 2px; padding: 3px; } .hotbar-slot { width: 39px; height: 43px; } .hotbar-slot .item-icon { width: 25px; height: 25px; margin-top: 8px; } #selected-item-label { bottom: 78px; font-size: 11px; } }
         @media (max-height: 500px) { #block-palette { bottom: 10px; max-height: calc(100vh - 48px); } }
         :root { --mobile-joystick-size: 110px; --mobile-knob-size: 40px; --mobile-button-size: 64px; --mobile-button-height: 48px; --mobile-control-gap: 7px; --mobile-control-edge: 16px; --mobile-control-bottom: 100px; --mobile-control-font: 10px; }

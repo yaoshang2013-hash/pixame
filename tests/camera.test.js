@@ -162,13 +162,16 @@ test('local head aim direction follows the actual block hit point', () => {
   assert.ok(Math.abs(context.localAimDirection.z + 4 / expectedLength) < 1e-10);
 });
 
-test('front third person does not rotate the player head toward the cursor', () => {
+test('front third person turns the player head toward the camera instead of the cursor', () => {
   const camera = new THREE.PerspectiveCamera();
   const context = vm.createContext({
-    camera, look: {yaw: 0, pitch: 0.5}, localAimDirection: {x: 1, y: 1, z: 1},
+    camera, look: {yaw: 0.2, pitch: 0.5}, thirdPersonYaw: 0.8, localAimDirection: {x: 1, y: 1, z: 1},
     perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: 2
   });
   vm.runInContext(source.slice(localAimStart, localAimEnd), context);
   context.updateLocalAvatarAim({aimPoint: {x: 4, y: 1, z: -3}});
-  assert.equal(context.localAimDirection, null);
+  const cosPitch = Math.cos(0.5);
+  assert.ok(Math.abs(context.localAimDirection.x + Math.sin(0.8) * cosPitch) < 1e-10);
+  assert.ok(Math.abs(context.localAimDirection.y - Math.sin(0.5)) < 1e-10);
+  assert.ok(Math.abs(context.localAimDirection.z + Math.cos(0.8) * cosPitch) < 1e-10);
 });
