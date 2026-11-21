@@ -28,14 +28,17 @@ test('player skin is applied to separate animated body parts', () => {
   assert.equal(second.limbs.right_arm.rotation.x, 0);
 });
 
-test('player model applies its 180-degree facing offset at the root', () => {
+test('player model faces the same direction as the camera yaw', () => {
   const avatars = factory();
   const avatar = avatars.create();
-  avatars.setFacingYaw(avatar, 0.25);
-  assert.ok(Math.abs(avatar.root.rotation.y - (Math.PI + 0.25)) < 1e-8);
+  const yaw = 0.25;
+  avatars.setFacingYaw(avatar, yaw);
+  const facing = new THREE.Vector3(0, 0, -1).applyQuaternion(avatar.root.quaternion);
+  const expected = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
+  assert.ok(facing.distanceTo(expected) < 1e-8);
   avatars.update(avatar, { moving: true, forwardMove: 1 }, 0.05);
   assert.ok(Math.abs(avatar.pose.rotation.y) < 0.1);
-  assert.ok(Math.abs(avatar.root.rotation.y - (Math.PI + 0.25)) < 1e-8);
+  assert.ok(Math.abs(avatar.root.rotation.y - yaw) < 1e-8);
 });
 
 test('player head follows the crosshair target independently of the body', () => {

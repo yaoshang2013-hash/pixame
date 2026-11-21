@@ -20,7 +20,6 @@
   }
   const parts = new Map(model.models.map(part => [part.part, part]));
   const [textureWidth, textureHeight] = model.textureSize;
-  const modelYawOffset = Math.PI;
   texture.encoding = THREE.sRGBEncoding;
   texture.magFilter = THREE.NearestFilter;
   texture.minFilter = THREE.NearestFilter;
@@ -354,7 +353,7 @@
   }
 
   function setFacingYaw(avatar, yaw) {
-    avatar.root.rotation.set(0, (Number.isFinite(yaw) ? yaw : 0) + modelYawOffset, 0);
+    avatar.root.rotation.set(0, Number.isFinite(yaw) ? yaw : 0, 0);
   }
 
   return { create, setFacingYaw, update, waterPose: createPlayerAvatarFactory.waterPose };
