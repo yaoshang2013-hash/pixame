@@ -279,7 +279,16 @@
         sun.shadow.camera.right = 15;
         sun.shadow.camera.top = 15;
         sun.shadow.camera.bottom = -15;
+        sun.shadow.camera.updateProjectionMatrix();
+        sun.shadow.bias = -0.0001;
+        sun.shadow.normalBias = 0.02;
         scene.add(sun);
+        scene.add(sun.target);
+
+        function updateSunForPlayer() {
+            sun.target.position.copy(camera.position);
+            sun.position.set(camera.position.x + 5, camera.position.y + 10, camera.position.z + 5);
+        }
 
         const tile = 16;
         const treeSpecies = ['spruce', 'jungle', 'acacia', 'cherry', 'birch', 'dark_oak'];
@@ -835,6 +844,7 @@
             mesh.userData.sparkBlockModel = true;
             mesh.castShadow = false;
             mesh.receiveShadow = true;
+            mesh.userData.blockShadowCaster = true;
             cubeGroup.add(mesh);
             return cubeGroup;
         }
@@ -1955,11 +1965,12 @@
             depthWrite: false
         });
 
-        function addBlockInstances(targetGroup, blocks, geometry, material, blockType = null) {
+        function addBlockInstances(targetGroup, blocks, geometry, material, blockType = null, castsShadow = true) {
             if (blocks.length === 0) return;
             const mesh = new THREE.InstancedMesh(geometry, material, blocks.length);
             mesh.userData.blockRecords = blocks;
             mesh.userData.blockType = blockType;
+            mesh.userData.blockShadowCaster = castsShadow;
             const matrix = new THREE.Matrix4();
             const rotation = new THREE.Quaternion();
             const position = new THREE.Vector3();
@@ -2472,7 +2483,7 @@
 
             if (lod === 'high') {
                 addBlockInstances(chunkGroup, highGrass, grassGeo, grassMaterials, 'grass');
-                addBlockInstances(chunkGroup, highGrass, grassOverlayGeo, [grassOverlayMaterial], 'grass');
+                addBlockInstances(chunkGroup, highGrass, grassOverlayGeo, [grassOverlayMaterial], 'grass', false);
                 addBlockInstances(chunkGroup, highDirt, dirtGeo, blockMat, 'dirt');
                 addBlockInstances(chunkGroup, highStone, stoneGeo, blockMat, 'stone');
                 addBlockInstances(chunkGroup, highIronOre, ironOreGeo, blockMat, 'iron_ore');
@@ -2494,12 +2505,12 @@
             } else {
                 for (const blocksByType of [lowTerrainBlocks, lowPlacedBlocks]) {
                     for (const [type, blocks] of blocksByType) {
-                        const mesh = addBlockInstances(chunkGroup, blocks, blockGeo, lowDetailMaterials[type], type);
+                        const mesh = addBlockInstances(chunkGroup, blocks, blockGeo, lowDetailMaterials[type], type, false);
                         if (mesh && type === 'leaves') mesh.userData.foliageSpecies = 'oak';
                     }
                 }
                 for (const [type, blocks] of lowSparkBlocks) {
-                    addBlockInstances(chunkGroup, blocks, blockGeo, getLowSparkMaterial(type), type);
+                    addBlockInstances(chunkGroup, blocks, blockGeo, getLowSparkMaterial(type), type, false);
                 }
             }
             for (const [species, blocks] of treeBlocks) {
@@ -2508,17 +2519,34 @@
                 const leafGeometry = lod === 'low' ? blockGeo : geometry ? geometry.leaves : leavesGeo;
                 const logMaterial = lod === 'low' ? (lowTreeMaterials[species]?.wood || lowDetailMaterials.wood) : blockMat;
                 const leafMaterial = lod === 'low' ? (lowTreeMaterials[species]?.leaves || lowDetailMaterials.leaves) : leavesMaterial;
-                addBlockInstances(chunkGroup, blocks.wood, logGeometry, logMaterial, treeBlockType(species, 'wood'));
-                const leaves = addBlockInstances(chunkGroup, blocks.leaves, leafGeometry, leafMaterial, treeBlockType(species, 'leaves'));
+                addBlockInstances(chunkGroup, blocks.wood, logGeometry, logMaterial, treeBlockType(species, 'wood'), lod === 'high');
+                const leaves = addBlockInstances(chunkGroup, blocks.leaves, leafGeometry, leafMaterial, treeBlockType(species, 'leaves'), lod === 'high');
                 if (leaves) leaves.userData.foliageSpecies = species;
             }
             for (const [x, y, z, type, model] of highSparkModelBlocks) {
                 chunkGroup.add(createSparkBlockModel(type, model, x, y, z));
             }
-            addBlockInstances(chunkGroup, waterBed, lod === 'low' ? blockGeo : sandGeo, lod === 'low' ? lowDetailMaterials.sand : blockMat, 'sand');
+            addBlockInstances(chunkGroup, waterBed, lod === 'low' ? blockGeo : sandGeo, lod === 'low' ? lowDetailMaterials.sand : blockMat, 'sand', lod === 'high');
             addWaterInstances(chunkGroup, waterCells);
             addWaterInstances(chunkGroup, caveWaterCells);
             return {group: chunkGroup, lod, chunkX, chunkZ, waterKeys, treeKeys, caveDetail};
+        }
+
+        const blockShadowRadius = 24;
+        function updateBlockShadowCasting() {
+            const radiusSquared = blockShadowRadius * blockShadowRadius;
+            for (const chunk of terrainChunks.values()) {
+                const minX = chunk.chunkX * chunkSize;
+                const minZ = chunk.chunkZ * chunkSize;
+                const closestX = Math.max(minX, Math.min(camera.position.x, minX + chunkSize));
+                const closestZ = Math.max(minZ, Math.min(camera.position.z, minZ + chunkSize));
+                const dx = closestX - camera.position.x;
+                const dz = closestZ - camera.position.z;
+                const shouldCast = chunk.lod === 'high' && dx * dx + dz * dz <= radiusSquared;
+                chunk.group.traverse(object => {
+                    if (object.userData.blockShadowCaster) object.castShadow = shouldCast;
+                });
+            }
         }
 
         function updateTerrainChunks() {
@@ -2565,6 +2593,7 @@
                     for (const waterKey of chunk.waterKeys) activeWaterCells.add(waterKey);
                     for (const treeKey of chunk.treeKeys) activeTreeBlocks.add(treeKey);
                     terrainChunks.set(key, chunk);
+                    updateBlockShadowCasting();
                 }
             }
 
@@ -2577,6 +2606,7 @@
                     terrainChunks.delete(key);
                 }
             }
+            updateBlockShadowCasting();
         }
 
         scene.add(floorGroup);
@@ -2585,6 +2615,7 @@
         let avatarFactory = null;
 
         updateTerrainChunks();
+        updateSunForPlayer();
 
         const grassOverlayImage = new Image();
         grassOverlayImage.onload = () => {
@@ -4712,6 +4743,7 @@
                 verticalSpeed: velocityY
             });
 
+            updateSunForPlayer();
             renderer.render(scene, updatePerspectiveCamera());
             if (heldItemModel.visible && heldItemModel.children.length) {
                 renderer.autoClear = false;
