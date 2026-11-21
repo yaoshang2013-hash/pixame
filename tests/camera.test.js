@@ -26,7 +26,7 @@ function cameraContext(mode, pitch, yaw, obstructionDistance) {
     perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: mode,
     thirdPersonYaw: yaw, previousPerspectiveMode: ['first', 'thirdBack', 'thirdFront'][mode],
     shoulderOffset: 0.85, shoulderHeightOffset: 0.35,
-    thirdPersonAimHeight: 1.5,
+    thirdPersonAimHeight: 1.5, thirdPersonFaceHeight: 1.75,
     gameSettings: { shoulderSide: 'right' },
     avatarFactory: { setFacingYaw() {} },
     heldItemModel: {}, playerInventoryOpen: false, workbenchOpen: false, furnaceOpen: false,
@@ -86,6 +86,14 @@ test('shoulder selection offsets the camera target to opposite sides', () => {
   assert.ok(Math.abs((rightShoulderX - context.viewTarget.x) - 1.7) < 1e-10);
 });
 
+test('front third person centers the face without shoulder framing', () => {
+  const context = cameraContext(2, 0, 0);
+  context.updatePerspectiveCamera();
+  assert.equal(context.viewTarget.x, context.camera.position.x);
+  assert.equal(context.viewTarget.y, 8 - 1.8 + 1.75);
+  assert.equal(context.viewCamera.position.y, context.viewTarget.y);
+});
+
 test('aim camera matches the selected rendered perspective', () => {
   const firstPerson = cameraContext(0, 0.2, 0.4);
   assert.equal(firstPerson.getAimCamera(), firstPerson.camera);
@@ -119,10 +127,23 @@ test('local head aim angles follow the actual block hit point', () => {
   const camera = new THREE.PerspectiveCamera();
   camera.position.set(0, 1.8, 0);
   const context = vm.createContext({
-    camera, look: {yaw: 0, pitch: 0}, localAimYaw: 0, localAimPitch: 0
+    camera, look: {yaw: 0, pitch: 0}, localAimYaw: 0, localAimPitch: 0,
+    perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: 1
   });
   vm.runInContext(source.slice(localAimStart, localAimEnd), context);
   context.updateLocalAvatarAim({aimPoint: {x: -3, y: 3, z: -4}});
   assert.ok(Math.abs(context.localAimYaw - Math.atan2(3, 4)) < 1e-10);
   assert.ok(Math.abs(context.localAimPitch - Math.atan2(1.2, 5)) < 1e-10);
+});
+
+test('front third person does not rotate the player head toward the cursor', () => {
+  const camera = new THREE.PerspectiveCamera();
+  const context = vm.createContext({
+    camera, look: {yaw: 0, pitch: 0.5}, localAimYaw: 0.2, localAimPitch: 0.3,
+    perspectiveModes: ['first', 'thirdBack', 'thirdFront'], perspectiveModeIndex: 2
+  });
+  vm.runInContext(source.slice(localAimStart, localAimEnd), context);
+  context.updateLocalAvatarAim({aimPoint: {x: 4, y: 1, z: -3}});
+  assert.equal(context.localAimYaw, 0);
+  assert.equal(context.localAimPitch, 0);
 });

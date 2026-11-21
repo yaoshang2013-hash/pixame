@@ -343,7 +343,7 @@
       ['left_arm', leftArmX, -swim * Math.sin(avatar.phase + 0.5) * 0.12, leftArmZ],
       ['right_leg', rightLegX, 0, legSplay - sideLegSwing],
       ['left_leg', leftLegX, 0, -legSplay + sideLegSwing],
-      ['head', headNod + aimPitch, aimYaw, 0]
+      ['head', headNod - aimPitch, aimYaw, 0]
     ]) {
       const limb = avatar.limbs[name];
       limb.rotation.x += (x - limb.rotation.x) * transition;

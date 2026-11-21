@@ -4012,7 +4012,7 @@
         function updateShoulderToggleButton() {
             const shoulder = gameSettings.shoulderSide.toUpperCase();
             mobileShoulderToggle.textContent = `SHOULDER: ${shoulder}`;
-            mobileShoulderToggle.hidden = !mobileMode || perspectiveModes[perspectiveModeIndex] === 'first';
+            mobileShoulderToggle.hidden = !mobileMode || perspectiveModes[perspectiveModeIndex] !== 'thirdBack';
         }
 
         function setShoulderSide(side) {
@@ -4076,7 +4076,7 @@
             mobileControlSizeValue.textContent = `${mobileControlSizeInput.value}%`;
             cameraPerspectiveSelect.value = perspectiveModes[perspectiveModeIndex];
             shoulderSideSelect.value = gameSettings.shoulderSide;
-            shoulderSideRow.hidden = perspectiveModes[perspectiveModeIndex] === 'first';
+            shoulderSideRow.hidden = perspectiveModes[perspectiveModeIndex] !== 'thirdBack';
             updateShoulderToggleButton();
             renderKeybindings();
         }
@@ -4303,6 +4303,11 @@
         }
 
         function updateLocalAvatarAim(target) {
+            if (perspectiveModes[perspectiveModeIndex] !== 'thirdBack') {
+                localAimYaw = 0;
+                localAimPitch = 0;
+                return;
+            }
             if (!target || !target.aimPoint) {
                 localAimYaw = 0;
                 localAimPitch = look.pitch;
@@ -4327,6 +4332,7 @@
         const viewRayDirection = new THREE.Vector3();
         const viewRaycaster = new THREE.Raycaster();
         const thirdPersonAimHeight = 1.5;
+        const thirdPersonFaceHeight = 1.75;
         function updateThirdPersonFollow(dt) {
             const perspectiveMode = perspectiveModes[perspectiveModeIndex];
             if (perspectiveMode === 'first' || previousPerspectiveMode === 'first') {
@@ -4343,6 +4349,7 @@
 
         function updatePerspectiveCamera() {
             const perspectiveMode = perspectiveModes[perspectiveModeIndex];
+            const isOverShoulder = perspectiveMode === 'thirdBack';
             const authScreen = document.getElementById('auth-screen');
             heldItemModel.visible = perspectiveMode === 'first' && !playerInventoryOpen && !workbenchOpen && !furnaceOpen && blockPalette.hidden && authScreen.hidden;
             if (playerAvatar) {
@@ -4362,10 +4369,13 @@
             viewRight.crossVectors(viewDirection, camera.up).normalize().multiplyScalar(-directionMultiplier);
             viewTarget.set(
                 camera.position.x,
-                camera.position.y - playerEyeHeight + thirdPersonAimHeight,
+                camera.position.y - playerEyeHeight +
+                    (isOverShoulder ? thirdPersonAimHeight : thirdPersonFaceHeight),
                 camera.position.z
             );
-            viewTarget.addScaledVector(viewRight, shoulderOffset * (gameSettings.shoulderSide === 'left' ? -1 : 1));
+            if (isOverShoulder) {
+                viewTarget.addScaledVector(viewRight, shoulderOffset * (gameSettings.shoulderSide === 'left' ? -1 : 1));
+            }
             const viewDistance = 4.4;
             viewRayDirection.copy(viewDirection).multiplyScalar(directionMultiplier);
             viewRaycaster.set(viewTarget, viewRayDirection);
@@ -4388,7 +4398,7 @@
                 safeDistance = Math.max(0.35, obstruction.distance - 0.3);
             }
             viewCamera.position.copy(viewTarget).addScaledVector(viewRayDirection, safeDistance);
-            viewCamera.position.y += shoulderHeightOffset;
+            if (isOverShoulder) viewCamera.position.y += shoulderHeightOffset;
             viewCamera.lookAt(viewTarget);
             viewCamera.updateMatrixWorld(true);
             return viewCamera;
@@ -4423,7 +4433,8 @@
                 saveGameSettings();
                 return;
             }
-            if (isKeyBound('toggleShoulder', e) && !e.repeat) {
+            if (isKeyBound('toggleShoulder', e) && !e.repeat &&
+                perspectiveModes[perspectiveModeIndex] === 'thirdBack') {
                 setShoulderSide(gameSettings.shoulderSide === 'right' ? 'left' : 'right');
                 return;
             }
